@@ -3,7 +3,7 @@
 **19+ Stem AI Multitrack Audio Separation Studio & WebAudio DAW**
 
 [![.NET 9.0](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.7%2Bcu118-red.svg)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.11%2Bcu128-red.svg)](https://pytorch.org/)
 [![Demucs](https://img.shields.io/badge/Demucs-v4.1.0-blue.svg)](https://github.com/facebookresearch/demucs)
 [![UVR ONNX](https://img.shields.io/badge/UVR-ONNX%20MDX--Net-orange.svg)](https://github.com/nomadkaraoke/python-audio-separator)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -58,8 +58,8 @@ cd AI-Track-Splitter
 # 建立專屬虛擬環境
 python -m venv ai_engine/.venv
 
-# 安裝 PyTorch CUDA 11.8 加速版
-./ai_engine/.venv/Scripts/python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# 安裝 PyTorch CUDA 12.8 加速版 (支援 RTX 50 系列)
+./ai_engine/.venv/Scripts/python.exe -m pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
 
 # 安裝 Demucs v4 與 UVR 音訊分離組件
 ./ai_engine/.venv/Scripts/python.exe -m pip install -r ai_engine/requirements.txt
@@ -118,7 +118,7 @@ cd AI-Track-Splitter
 #### 2. Setup Python GPU Environment
 ```powershell
 python -m venv ai_engine/.venv
-./ai_engine/.venv/Scripts/python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+./ai_engine/.venv/Scripts/python.exe -m pip install torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cu128
 ./ai_engine/.venv/Scripts/python.exe -m pip install -r ai_engine/requirements.txt
 ```
 
