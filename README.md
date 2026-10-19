@@ -49,8 +49,8 @@
 
 #### 1. 複製專案
 ```bash
-git clone https://github.com/your-username/StemForge-Studio.git
-cd StemForge-Studio
+git clone https://github.com/allanlinallan/AI-Track-Splitter.git
+cd AI-Track-Splitter
 ```
 
 #### 2. 安裝 Python AI 環境（啟用 GPU 加速）
@@ -111,8 +111,8 @@ dotnet run --project src/StemForge.Web/StemForge.Web.csproj --urls http://localh
 
 #### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/StemForge-Studio.git
-cd StemForge-Studio
+git clone https://github.com/allanlinallan/AI-Track-Splitter.git
+cd AI-Track-Splitter
 ```
 
 #### 2. Setup Python GPU Environment
