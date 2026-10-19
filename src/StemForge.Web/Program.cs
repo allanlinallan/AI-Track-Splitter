@@ -197,7 +197,7 @@ app.MapPost("/api/jobs/separate", async (
     {
         var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
         jsonOpts.Converters.Add(new JsonStringEnumConverter());
-        await File.WriteAllTextAsync(Path.Combine(contentRoot, "wwwroot", "latest_gpu_job.json"), JsonSerializer.Serialize(result, jsonOpts), ct);
+        await File.WriteAllTextAsync(Path.Combine(wwwrootDir, "latest_gpu_job.json"), JsonSerializer.Serialize(result, jsonOpts), ct);
     }
     catch { /* ignore snapshot write error */ }
 
@@ -336,7 +336,7 @@ app.MapPost("/api/jobs/{jobId}/prompt/{prompt}", async (
         {
             var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
             jsonOpts.Converters.Add(new JsonStringEnumConverter());
-            await File.WriteAllTextAsync(Path.Combine(contentRoot, "wwwroot", "latest_gpu_job.json"), JsonSerializer.Serialize(job, jsonOpts), ct);
+            await File.WriteAllTextAsync(Path.Combine(wwwrootDir, "latest_gpu_job.json"), JsonSerializer.Serialize(job, jsonOpts), ct);
         }
         catch { /* ignore */ }
     }
@@ -380,25 +380,9 @@ _ = Task.Run(async () =>
         };
         jsonOpts.Converters.Add(new JsonStringEnumConverter());
 
-        string latestJsonPath = Path.Combine(contentRoot, "wwwroot", "latest_gpu_job.json");
+        string latestJsonPath = Path.Combine(wwwrootDir, "latest_gpu_job.json");
         await File.WriteAllTextAsync(latestJsonPath, JsonSerializer.Serialize(result, jsonOpts));
 
-        // 同步更新其他專案目錄 (如 d199dc5fa1, 43121b2bd2) 的音軌，確保前端任何分頁皆取得最新高純度音軌
-        string activeStemsDir = Path.Combine(targetDir, "stems");
-        if (Directory.Exists(activeStemsDir))
-        {
-            foreach (var projSubDir in Directory.GetDirectories(projectsDir))
-            {
-                if (string.Equals(Path.GetFileName(projSubDir), targetJobId, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                string otherStemsDir = Path.Combine(projSubDir, "stems");
-                if (!Directory.Exists(otherStemsDir)) continue;
-                foreach (var wav in Directory.GetFiles(activeStemsDir, "*.wav"))
-                {
-                    File.Copy(wav, Path.Combine(otherStemsDir, Path.GetFileName(wav)), overwrite: true);
-                }
-            }
-        }
         Console.WriteLine($"[StemForge GPU Startup] Synthesized {result.Stems.Count} GPU stems for {targetJobId} (NullTest: {result.NullTestCancellationDbFs} dBFS)");
     }
     catch (Exception ex)

@@ -448,6 +448,7 @@ class StemForgeDawApp {
   }
 
   async loadJobIntoMixer(jobResult) {
+    this.stopPlayback();
     this.currentJob = jobResult;
     try {
       sessionStorage.setItem("stemforge_last_job", JSON.stringify(jobResult));
@@ -465,8 +466,8 @@ class StemForgeDawApp {
 
     this.mixerTracksContainer.innerHTML = `<div class="empty-mixer-state">正在將 ${jobResult.stems.length} 條 32-bit Float 音軌解碼載入 WebAudio 同步緩衝區...</div>`;
 
-    // 解碼原曲供 Null Test 反相抵消使用
-    const srcResp = await fetch(jobResult.sourceAudioUrl);
+    // 解碼原曲供 Null Test 反相抵消使用 (加上 timestamp 避免被瀏覽器硬取快取)
+    const srcResp = await fetch(`${jobResult.sourceAudioUrl}?t=${Date.now()}`);
     const srcArr = await srcResp.arrayBuffer();
     this.originalMixBuffer = await this.audioCtx.decodeAudioData(srcArr);
     this.durationSec = this.originalMixBuffer.duration;

@@ -57,7 +57,6 @@ public sealed class DagOrchestrator
         // 確保 raw_stems 內的 GPU 神經網路母軌 (.wav 與 __v1.wav) 同步寫入快取池，覆蓋任何早期未裝 GPU 模型時的舊快取
         string[] candidateRawDirs =
         [
-            Path.Combine(_workspaceDataDir, "projects", "fa62f70e30", "raw_stems"),
             rawStemsDir
         ];
         string[] neuralBusNodes =
@@ -523,26 +522,47 @@ public sealed class DagOrchestrator
     {
         string p = prompt.ToLowerInvariant();
         StereoAudioBuffer raw;
-        if (p.Contains("flute") || p.Contains("wind") || p.Contains("piccolo") || p.Contains("長笛") || p.Contains("短笛") || p.Contains("笛"))
+        // 1. 高音木管組 (Flute, Piccolo, Whistle, Recorder)
+        if (p.Contains("flute") || p.Contains("piccolo") || p.Contains("長笛") || p.Contains("短笛") || p.Contains("直笛") || p.Contains("笛"))
             raw = HpssDecomposer.ExtractFrequencyBand(source, 520f, 7800f, preferCenter: true, preferTransient: false, isolateNarrowbandMelody: true);
-        else if (p.Contains("clarinet") || p.Contains("oboe") || p.Contains("單簧管") || p.Contains("雙簧管") || p.Contains("豎笛"))
+        // 2. 中簧管組 (Clarinet, Oboe, English Horn, 雙簧管, 豎笛)
+        else if (p.Contains("clarinet") || p.Contains("oboe") || p.Contains("單簧管") || p.Contains("雙簧管") || p.Contains("豎笛") || p.Contains("黑管"))
             raw = HpssDecomposer.ExtractFrequencyBand(source, 260f, 5500f, preferCenter: true, preferTransient: false, isolateNarrowbandMelody: true);
+        // 3. 薩克斯風與單簧吹奏 (Saxophone, Harmonica, 口琴)
         else if (p.Contains("sax") || p.Contains("薩克斯") || p.Contains("harmonica") || p.Contains("口琴"))
-            raw = HpssDecomposer.ExtractFrequencyBand(source, 240f, 5000f, preferCenter: true, preferTransient: false, isolateNarrowbandMelody: true);
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 200f, 5200f, preferCenter: true, preferTransient: false, isolateNarrowbandMelody: true);
+        // 4. 小提琴與高音拉弦 (Violin, Viola, Erhu, 小提琴, 中提琴, 二胡)
+        else if (p.Contains("violin") || p.Contains("viola") || p.Contains("erhu") || p.Contains("小提琴") || p.Contains("中提琴") || p.Contains("二胡") || p.Contains("弦樂"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 196f, 6800f, preferCenter: false, preferTransient: false, isolateNarrowbandMelody: true);
+        // 5. 大提琴與低音弦 (Cello, Double Bass, 大提琴, 低音提琴)
         else if (p.Contains("cello") || p.Contains("大提琴"))
             raw = HpssDecomposer.ExtractFrequencyBand(source, 65f, 2200f, preferCenter: false, preferTransient: false, isolateNarrowbandMelody: true);
-        else if (p.Contains("violin") || p.Contains("string") || p.Contains("erhu") || p.Contains("小提琴") || p.Contains("二胡") || p.Contains("弦"))
-            raw = HpssDecomposer.ExtractFrequencyBand(source, 196f, 6500f, preferCenter: false, preferTransient: false, isolateNarrowbandMelody: true);
-        else if (p.Contains("brass") || p.Contains("trumpet") || p.Contains("horn") || p.Contains("銅管") || p.Contains("小號") || p.Contains("法國號"))
-            raw = HpssDecomposer.ExtractFrequencyBand(source, 220f, 4800f, preferCenter: true, preferTransient: true, isolateNarrowbandMelody: true);
-        else if (p.Contains("guzheng") || p.Contains("harp") || p.Contains("pluck") || p.Contains("古箏") || p.Contains("豎琴") || p.Contains("琵琶"))
-            raw = HpssDecomposer.ExtractFrequencyBand(source, 160f, 6500f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: false);
-        else if (p.Contains("acoustic") || p.Contains("guitar") || p.Contains("木吉他") || p.Contains("吉他"))
+        // 6. 小號與高音銅管 (Trumpet, Cornet, 小號, 短號)
+        else if (p.Contains("trumpet") || p.Contains("cornet") || p.Contains("小號") || p.Contains("短號"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 240f, 6000f, preferCenter: true, preferTransient: true, isolateNarrowbandMelody: true);
+        // 7. 長號與法國號等中低音銅管 (Trombone, French Horn, Tuba, 長號, 法國號, 大號)
+        else if (p.Contains("trombone") || p.Contains("horn") || p.Contains("tuba") || p.Contains("長號") || p.Contains("法國號") || p.Contains("銅管") || p.Contains("brass"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 110f, 3800f, preferCenter: true, preferTransient: true, isolateNarrowbandMelody: true);
+        // 8. 彈撥樂器群 (Guzheng, Pipa, Harp, Guqin, 古箏, 琵琶, 豎琴, 古琴, 阮)
+        else if (p.Contains("guzheng") || p.Contains("pipa") || p.Contains("harp") || p.Contains("guqin") || p.Contains("古箏") || p.Contains("琵琶") || p.Contains("豎琴") || p.Contains("古琴"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 150f, 7500f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: true);
+        // 9. 木吉他與烏克麗麗 (Acoustic Guitar, Ukulele, 木吉他, 烏克麗麗)
+        else if (p.Contains("acoustic") || p.Contains("ukulele") || p.Contains("木吉他") || p.Contains("烏克麗麗"))
             raw = HpssDecomposer.ExtractFrequencyBand(source, 120f, 5500f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: false);
-        else if (p.Contains("bell") || p.Contains("chime") || p.Contains("鐘") || p.Contains("鐵琴"))
-            raw = HpssDecomposer.ExtractFrequencyBand(source, 1200f, 12000f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: true);
+        // 10. 電吉他破音/主奏 (Electric Guitar, Distortion Guitar, Lead Guitar, 電吉他, Solo吉他)
+        else if (p.Contains("electric") || p.Contains("distort") || p.Contains("lead_guitar") || p.Contains("電吉他"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 180f, 6500f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: true);
+        // 11. 手風琴與風琴 (Accordion, Organ, 手風琴, 風琴)
+        else if (p.Contains("accordion") || p.Contains("organ") || p.Contains("手風琴") || p.Contains("風琴"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 130f, 6200f, preferCenter: false, preferTransient: false, isolateNarrowbandMelody: true);
+        // 12. 鐘鳴金屬打擊 (Bell, Chime, Glockenspiel, Vibraphone, 鐵琴, 風鈴, 鐘)
+        else if (p.Contains("bell") || p.Contains("chime") || p.Contains("glock") || p.Contains("vibra") || p.Contains("鐘") || p.Contains("鐵琴") || p.Contains("風鈴"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 1200f, 13000f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: true);
+        // 13. 合成器主奏與撥片 (Synth Lead, Pluck, 電音主奏)
+        else if (p.Contains("synth") || p.Contains("lead") || p.Contains("pluck") || p.Contains("合成器"))
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 350f, 8500f, preferCenter: false, preferTransient: true, isolateNarrowbandMelody: true);
         else
-            raw = HpssDecomposer.ExtractFrequencyBand(source, 280f, 6200f, preferCenter: true, preferTransient: false, isolateNarrowbandMelody: true);
+            raw = HpssDecomposer.ExtractFrequencyBand(source, 280f, 6500f, preferCenter: true, preferTransient: false, isolateNarrowbandMelody: true);
 
         return ResidualConservator.ApplyModePostProcessing(raw, SeparationMode.PureIsolation);
     }
@@ -564,15 +584,11 @@ public sealed class DagOrchestrator
         Directory.CreateDirectory(rawStemsDir);
         Directory.CreateDirectory(activeStemsDir);
 
-        string gpuRefRawDir = Path.Combine(_workspaceDataDir, "projects", "fa62f70e30", "raw_stems");
         string[] candidates =
         [
             Path.Combine(rawStemsDir, "O0_OTHER_ALL.wav"),
             Path.Combine(rawStemsDir, "O0_OTHER_ALL__v1.wav"),
-            Path.Combine(gpuRefRawDir, "O0_OTHER_ALL.wav"),
-            Path.Combine(gpuRefRawDir, "O0_OTHER_ALL__v1.wav"),
             Path.Combine(rawStemsDir, "I1_MELODIC_RESIDUAL.wav"),
-            Path.Combine(gpuRefRawDir, "I1_MELODIC_RESIDUAL.wav"),
             Path.Combine(jobDir, "00_Original_Mix.wav")
         ];
         string? sourceCandidate = candidates.FirstOrDefault(File.Exists);

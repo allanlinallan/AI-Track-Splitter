@@ -89,15 +89,16 @@ def run_demucs_cascade_gpu(input_wav: str, model_dir: str):
     wav_conv = convert_audio(wav_norm[None], orig_sr, model_4s.samplerate, model_4s.audio_channels)
 
     with torch.no_grad():
-        sources_4s = apply_model(
-            model_4s,
-            wav_conv,
-            device=device,
-            shifts=1,
-            split=True,
-            overlap=0.25,
-            progress=False,
-        )[0]
+        with torch.cuda.amp.autocast(dtype=torch.float16 if device == "cuda" else torch.float32):
+            sources_4s = apply_model(
+                model_4s,
+                wav_conv,
+                device=device,
+                shifts=2,
+                split=True,
+                overlap=0.25,
+                progress=False,
+            )[0]
 
     sources_4s = sources_4s * ref_std + ref_mean
     if model_4s.samplerate != orig_sr:
@@ -135,15 +136,16 @@ def run_demucs_cascade_gpu(input_wav: str, model_dir: str):
     mel_conv = convert_audio(mel_norm[None], orig_sr, model_6s.samplerate, model_6s.audio_channels)
 
     with torch.no_grad():
-        sources_6s = apply_model(
-            model_6s,
-            mel_conv,
-            device=device,
-            shifts=1,
-            split=True,
-            overlap=0.25,
-            progress=False,
-        )[0]
+        with torch.cuda.amp.autocast(dtype=torch.float16 if device == "cuda" else torch.float32):
+            sources_6s = apply_model(
+                model_6s,
+                mel_conv,
+                device=device,
+                shifts=2,
+                split=True,
+                overlap=0.25,
+                progress=False,
+            )[0]
 
     sources_6s = sources_6s * m_std + m_mean
     if model_6s.samplerate != orig_sr:
