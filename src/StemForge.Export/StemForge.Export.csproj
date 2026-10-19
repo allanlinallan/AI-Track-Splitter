@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StemForge.Export</RootNamespace>
+    <AssemblyName>StemForge.Export</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StemForge.Core\StemForge.Core.csproj" />
+    <ProjectReference Include="..\StemForge.Dsp\StemForge.Dsp.csproj" />
+  </ItemGroup>
+</Project>

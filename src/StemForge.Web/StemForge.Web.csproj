@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>StemForge.Web</RootNamespace>
+    <AssemblyName>StemForge.Web</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StemForge.Core\StemForge.Core.csproj" />
+    <ProjectReference Include="..\StemForge.Dsp\StemForge.Dsp.csproj" />
+    <ProjectReference Include="..\StemForge.Inference\StemForge.Inference.csproj" />
+    <ProjectReference Include="..\StemForge.Export\StemForge.Export.csproj" />
+  </ItemGroup>
+</Project>

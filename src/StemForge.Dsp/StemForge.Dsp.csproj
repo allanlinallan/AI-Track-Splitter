@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StemForge.Dsp</RootNamespace>
+    <AssemblyName>StemForge.Dsp</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="System.Numerics.Tensors" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StemForge.Core\StemForge.Core.csproj" />
+  </ItemGroup>
+</Project>

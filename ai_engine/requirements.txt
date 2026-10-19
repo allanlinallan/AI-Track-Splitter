@@ -1,0 +1,8 @@
+# StemForge AI Engine Dependencies (Optimized for NVIDIA RTX 4050 6GB VRAM / CUDA 12.x)
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch>=2.4.0
+torchaudio>=2.4.0
+audio-separator[gpu]>=0.28.0
+demucs>=4.0.1
+basic-pitch>=0.3.2
+onnxruntime-gpu>=1.19.0

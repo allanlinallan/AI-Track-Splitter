@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
+  <link rel="stylesheet" href="/css/daw.css?v=3" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+</head>
+<body>
+  <!-- 頂部系統與硬體狀態列 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-badge">STEMFORGE .NET 9</span>
+      <h1>極限精細音軌分離工作站 <small>19+ Stems Hierarchical DAG + Waveform-Playlist WebAudio Mixer</small></h1>
+    </div>
+    <div class="hw-badges" id="hwStatusContainer">
+      <div class="hw-pill"><span class="dot green"></span><span id="gpuNameText">RTX 4050 Laptop (6GB)</span></div>
+      <div class="hw-pill">VRAM: <strong id="vramUsageText">-- / 6141 MB</strong></div>
+      <div class="hw-pill">D槽可用: <strong id="diskFreeText">-- GB</strong></div>
+      <div class="hw-pill" id="engineModePill">AI CLI + C# SIMD Ready</div>
+    </div>
+  </header>
+
+  <div class="workspace-grid">
+    <!-- 左側控制面板：音源輸入 + 模式選擇 + 19軌互動式分軌樹 -->
+    <aside class="sidebar">
+      <section class="panel-card">
+        <div class="panel-title">1. 音源載入 (MP3 / WAV / FLAC)</div>
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="audioFileInput" accept=".mp3,.wav,.flac,.m4a,.ogg" hidden />
+          <div class="drop-icon">🎵</div>
+          <div id="selectedFileLabel" class="drop-title">點擊選擇或拖曳音樂檔案至此</div>
+          <div class="drop-sub">支援任意採樣率 MP3 / WAV / FLAC，內部統一以 32-bit IEEE Float 處理</div>
+        </div>
+
+        <div class="local-path-box">
+          <input type="text" id="localPathInput" placeholder="或直接貼上本機檔案路徑 (如 D:\music\song.mp3)" />
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary" id="btnStartSeparate">🚀 開始精細分軌</button>
+          <button class="btn btn-accent" id="btnRunDemo" title="立即合成一首含主唱、和聲、鼓組、貝斯、吉他、弦樂的8秒測試曲並拆解19軌">⚡ 載入內建測試曲</button>
+        </div>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-title">
+          <span>2. 分離與相位守恆模式</span>
+          <span class="badge-instant">支援0秒即時切換</span>
+        </div>
+        <select id="separationModeSelect" class="daw-select">
+          <option value="BitAccurateResidual" selected>100% 能量守恆 (獨立第19軌 Residual，Null Test = -144dB)</option>
+          <option value="BitAccurateProportional">100% 能量守恆 (殘差按能量比例回填各軌，無額外殘差軌)</option>
+          <option value="PureIsolation">扒帶 / 抓譜模式 (Pure Isolation 軟閘門消除串音)</option>
+          <option value="AiTrainingDry">AI 訓練 / 採樣模式 (極致去殘響 + 去底噪 + -1dBFS 正規化)</option>
+        </select>
+
+        <div class="options-grid">
+          <label class="chk-label"><input type="checkbox" id="chkFp16" checked /> RTX 4050 FP16 半精度加速</label>
+          <label class="chk-label"><input type="checkbox" id="chkAutoMidi" /> 分離時自動轉出全軌 MIDI</label>
+        </div>
+      </section>
+
+      <section class="panel-card tree-card">
+        <div class="panel-title">
+          <span>3. 階層式分軌樹勾選 (DAG 19+ Stems)</span>
+          <span id="selectedCountBadge" class="count-pill">18 軌</span>
+        </div>
+        <div class="preset-btns" id="presetBtnsContainer">
+          <button class="btn-xs" data-preset="all">全選 18 軌</button>
+          <button class="btn-xs" data-preset="none">清空 0 軌</button>
+          <button class="btn-xs" data-preset="vocals">人聲極致 5 軌</button>
+          <button class="btn-xs" data-preset="drums">DrumSep 鼓組 6 軌</button>
+          <button class="btn-xs" data-preset="rhythm">節奏組 (鼓+Bass)</button>
+          <button class="btn-xs" data-preset="inst">吉他/管弦細分</button>
+          <button class="btn-xs" data-preset="karaoke">KTV 伴唱 (去主唱)</button>
+          <button class="btn-xs btn-add" id="btnSaveCustomPreset" title="將目前勾選的音軌組合儲存為你自己的預設按鈕">+ 儲存自訂組合</button>
+        </div>
+
+        <div id="dagTreeContainer" class="dag-tree-list"></div>
+
+        <!-- AudioSep 自然語言指定樂器抽離 -->
+        <div class="audiosep-box">
+          <div class="sub-label">🎯 AudioSep 文字提示額外抽離樂器 (選填)</div>
+          <div class="prompt-input-row">
+            <input type="text" id="promptInput" placeholder="輸入英文樂器如 violin, saxophone, flute..." />
+            <button class="btn-xs btn-add" id="btnAddPrompt">+ 新增</button>
+          </div>
+          <div class="prompt-tags" id="promptTagsContainer">
+            <span class="prompt-chip" data-prompt="violin">violin <b class="rm-chip">×</b></span>
+            <span class="prompt-chip" data-prompt="brass">brass <b class="rm-chip">×</b></span>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 右側主控台：進度監控 + Master Transport + 多軌同步 DAW 混音器 -->
+    <main class="main-stage">
+      <!-- 即時進度與節點快取狀態列 -->
+      <section class="progress-banner" id="progressBanner">
+        <div class="progress-header">
+          <div>
+            <span class="stage-tag" id="progressStageTag">READY</span>
+            <strong id="progressTitleText">等待啟動分軌任務...（可直接點左側「⚡ 載入內建測試曲」立即體驗 19 軌混音台）</strong>
+          </div>
+          <span class="pct-num" id="progressPctText">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressBarFill" style="width: 0%"></div>
+        </div>
+        <div class="progress-sub" id="progressSubText">系統平時不佔用任何背景 Python 程序；僅在執行分離時一次性呼叫並自動釋放 100% 顯存。</div>
+      </section>
+
+      <!-- DAW 多軌同步混音控制器 (Master Transport & Null Test) -->
+      <section class="transport-bar">
+        <div class="transport-controls">
+          <button class="t-btn t-play" id="btnPlayPause" disabled>▶ 播放 (Play)</button>
+          <button class="t-btn" id="btnStop" disabled>⏹ 停止</button>
+          <button class="t-btn" id="btnSoloClear" disabled>解除全 Solo/Mute</button>
+          <button class="t-btn t-nulltest" id="btnNullTest" disabled title="將所有分軌總和與原始母帶反相 (-180°) 疊加播放，驗證 100% 能量守恆與殘差">
+            Ø 反相抵消測試 (Null Test: OFF)
+          </button>
+        </div>
+
+        <div class="timecode-box">
+          <span id="currentTimeText">00:00.000</span>
+          <span class="sep">/</span>
+          <span id="totalTimeText">00:00.000</span>
+        </div>
+
+        <div class="master-fader-box">
+          <label>Master</label>
+          <input type="range" id="masterVolumeSlider" min="0" max="1.2" step="0.01" value="1.0" />
+          <span id="nullCancellationBadge" class="null-badge" title="所有分軌相加與原曲的最大相位誤差">Null 誤差: -- dBFS</span>
+        </div>
+
+        <div class="export-actions">
+          <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
+          <button class="btn btn-zip" id="btnExportZip" disabled>📦 打包全軌 ZIP (WAV+MIDI+RPP)</button>
+        </div>
+      </section>
+
+      <!-- 全域時間軸進度拖曳條 -->
+      <div class="timeline-scrubber" id="timelineScrubber">
+        <div class="scrubber-progress" id="scrubberProgress" style="width: 0%"></div>
+        <div class="scrubber-head" id="scrubberHead" style="left: 0%"></div>
+      </div>
+
+      <!-- 多軌同步混音台列表 (Channel Strips + Canvas Waveforms) -->
+      <section class="mixer-tracks-container" id="mixerTracksContainer">
+        <div class="empty-mixer-state">
+          <div class="empty-icon">🎚️</div>
+          <h3>多軌同步 DAW 混音台已就緒</h3>
+          <p>請在左側上傳 MP3 / WAV 檔案，或點擊 <strong>「⚡ 載入內建測試曲」</strong> 立即產生並體驗 19+ 軌毫秒級同步播放、Solo/Mute、相位反相測試與單軌一鍵轉 MIDI。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/js/webaudio-daw.js?v=9"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+## -------------------------------------------------------------
+## .NET / Visual Studio
+## -------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userprefs
+*.ide/
+Directory.Build.targets
+
+## -------------------------------------------------------------
+## Python / Virtual Environments
+## -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+ai_engine/.venv/
+.venv/
+env/
+venv/
+*.egg-info/
+.pytest_cache/
+
+## -------------------------------------------------------------
+## Large Binary Models & Audio Project Data (GitHub 100MB Limit)
+## -------------------------------------------------------------
+workspace_data/projects/*
+!workspace_data/projects/.gitkeep
+workspace_data/models/*.onnx
+workspace_data/models/*.th
+workspace_data/models/*.pt
+workspace_data/models/*.ckpt
+workspace_data/models/hub/
+
+## Audio files generated during test/runtime
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.zip
+
+## -------------------------------------------------------------
+## Build Artifacts & Portables (Use GitHub Releases instead)
+## -------------------------------------------------------------
+Release_Portable/
+StemForge_Portable_Win64.zip
+*.log
+
+## OS Specific
+.DS_Store
+Thumbs.db

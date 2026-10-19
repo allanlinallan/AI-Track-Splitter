@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>StemForge.Core</RootNamespace>
+    <AssemblyName>StemForge.Core</AssemblyName>
+  </PropertyGroup>
+</Project>
