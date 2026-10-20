@@ -30,28 +30,7 @@ class StemForgeDawApp {
     this.initDom();
     this.initSignalR();
     this.loadSystemStatus();
-    this.loadDagCatalog().then(async () => {
-      try {
-        const latestRes = await fetch(`/latest_gpu_job.json?t=${Date.now()}`);
-        if (latestRes.ok) {
-          const latestJob = await latestRes.json();
-          if (latestJob && latestJob.stems && latestJob.stems.length > 0) {
-            await this.loadJobIntoMixer(latestJob);
-            return;
-          }
-        }
-      } catch {}
-
-      const saved = sessionStorage.getItem("stemforge_last_job");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.stems && parsed.stems.length > 0) {
-            await this.loadJobIntoMixer(parsed);
-          }
-        } catch {}
-      }
-    });
+    this.loadDagCatalog();
 
     window.addEventListener("resize", () => {
       for (const t of this.tracks) {
