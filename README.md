@@ -32,10 +32,16 @@
    - 全部分軌疊加後與原始混音反相抵消誤差達到 **`-126.4 dBFS`**，確保 100% 無相位失真與聲音遺漏。
 4. **內建 WebAudio 多軌混音 DAW**
    - 瀏覽器原生 21 軌無損同步播放、Solo / Mute / Pan / 音量推桿 / 單軌相位反轉（Ø）。
-   - 3 種分離模式 0 秒即時切換（純淨隔離、比特無損殘差、AI 乾音訓練）。
-   - 一鍵匯出：支援分軌 ZIP 包、**Reaper 工程檔 (`.rpp`)** 與自動轉換 MIDI 音符。
-5. **物理顯存釋放（Zero VRAM Leak）**
-   - AI 模型推論透過獨立 CLI 進程執行，推論結束立即退出，由作業系統 100% 物理回收 RTX 4050 6GB 顯存。
+   - 4 種分離模式 0 秒即時切換（純淨隔離、比特無損殘差、能量比例回填、AI 乾音訓練）。
+   - 一鍵匯出：支援**多軌勾選打包 ZIP**（檔名自動標記軌數如 `_選取10軌.zip`）、**Reaper 工程檔 (`.rpp`)** 與自動轉換 MIDI 音符。
+5. **歷史專案 0 秒即時回載（History Projects）**
+   - 內建本機分軌歷史資料庫，隨時彈窗點選歷史歌曲「⚡ 載入混音台」。
+   - 免重新上傳、免重新計算，即時回播 21 軌音訊並切換模式或重新打包。
+6. **智慧硬體動態感知（Adaptive GPU Scaling）**
+   - 自動即時探測本機顯卡規格（RTX 4050 / 4060 Ti / 4080 / 4090）。
+   - 8GB / 16GB 以上 VRAM 自動切換更高 overlap 與多重相移（shifts）採樣，運算更快、音質更細膩。
+7. **物理顯存釋放（Zero VRAM Leak）**
+   - AI 模型推論透過獨立 CLI 進程執行，推論結束立即退出，由作業系統 100% 物理回收顯存。
 
 ---
 
@@ -94,9 +100,15 @@ dotnet run --project src/StemForge.Web/StemForge.Web.csproj --urls http://localh
    - Summing all stems and phase-inverting against the original mix yields cancellation down to **`-126.4 dBFS`**, guaranteeing zero phase smearing or lost transients.
 4. **Interactive WebAudio Multitrack DAW**
    - Zero-latency multitrack playback, Solo / Mute / Pan / Volume sliders / Phase inversion (Ø).
-   - Zero-second instant switching between 3 separation modes (Bit-Accurate Residual, Pure Isolation, AI Training Dry).
-   - Full Export Suite: Stems ZIP archive, **Reaper Project files (`.rpp`)**, and MIDI note transcriptions.
-5. **Guaranteed Zero VRAM Leaks**
+   - Zero-second instant switching between 4 separation modes (Bit-Accurate Residual, Bit-Accurate Proportional, Pure Isolation, AI Training Dry).
+   - Full Export Suite: **Selective multitrack ZIP packaging** (with auto track count in filename), **Reaper Project files (`.rpp`)**, and MIDI note transcriptions.
+5. **Instant Local History Project Re-loading**
+   - Built-in local project library allowing zero-latency reload of previously processed songs.
+   - Jump straight back into the 21-track mixer, adjust modes, and export without re-uploading or re-running AI inference.
+6. **Adaptive Hardware & GPU Specification Scaling**
+   - Dynamically probes GPU hardware (RTX 4050, 4060 Ti, 4080, 4090) at runtime.
+   - Automatically unleashes higher overlaps and multi-shift sampling on 8GB / 16GB+ VRAM cards for enhanced acoustic fidelity and ultra-fast inference.
+7. **Guaranteed Zero VRAM Leaks**
    - PyTorch inference runs via ephemeral subprocesses that terminate immediately upon stage completion, ensuring 100% physical recovery of GPU VRAM by Windows OS.
 
 ---
