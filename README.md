@@ -8,6 +8,8 @@
 [![UVR ONNX](https://img.shields.io/badge/UVR-ONNX%20MDX--Net-orange.svg)](https://github.com/nomadkaraoke/python-audio-separator)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+![StemForge Studio DAW Interface](docs/images/stemforge_studio_ui.png)
+
 [**繁體中文 (Traditional Chinese)**](#繁體中文) | [**English Documentation**](#english)
 
 ---
