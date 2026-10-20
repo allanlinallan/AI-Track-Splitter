@@ -1,8 +1,12 @@
-# StemForge AI Engine Dependencies (Optimized for NVIDIA RTX 4050 6GB VRAM / CUDA 12.x)
---extra-index-url https://download.pytorch.org/whl/cu124
-torch>=2.4.0
-torchaudio>=2.4.0
+# StemForge AI Engine Dependencies (CUDA 12.8 build: supports RTX 20xx–50xx incl. Blackwell sm_120)
+# Pin torch/torchaudio to the CUDA wheels so pip never swaps them for the CPU-only PyPI builds.
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0
+torchaudio==2.11.0
 audio-separator[gpu]>=0.28.0
 demucs>=4.0.1
-basic-pitch>=0.3.2
 onnxruntime-gpu>=1.19.0
+# librosa>=1.0 no longer pulls in audioread, but audio-separator still imports it
+audioread>=3.0
+# basic-pitch is optional (MIDI export falls back to the built-in C# engine).
+# It cannot be installed on Python >= 3.12 because it requires tensorflow<2.15.1 (no 3.12 wheels).

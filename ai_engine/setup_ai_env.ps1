@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
-Write-Host "=== StemForge AI Engine Setup (RTX 4050 6GB CUDA 12) ===" -ForegroundColor Cyan
+Write-Host "=== StemForge AI Engine Setup (CUDA 12.8) ===" -ForegroundColor Cyan
 
 if (-not (Test-Path ".venv")) {
     Write-Host "[1/3] 建立獨立 Python .venv 虛擬環境..." -ForegroundColor Yellow
@@ -12,7 +12,7 @@ if (-not (Test-Path ".venv")) {
 $PipExe = Join-Path $ScriptDir ".venv\Scripts\pip.exe"
 $PythonExe = Join-Path $ScriptDir ".venv\Scripts\python.exe"
 
-Write-Host "[2/3] 升級 pip 並安裝 PyTorch CUDA + audio-separator[gpu] + demucs + basic-pitch..." -ForegroundColor Yellow
+Write-Host "[2/3] 升級 pip 並安裝 PyTorch CUDA + audio-separator[gpu] + demucs..." -ForegroundColor Yellow
 & $PipExe install --upgrade pip
 & $PipExe install -r requirements.txt
 
