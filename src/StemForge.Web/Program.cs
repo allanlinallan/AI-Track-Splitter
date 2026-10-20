@@ -291,28 +291,66 @@ app.MapPost("/api/jobs/{jobId}/midi/{nodeId}", async (
     });
 });
 
-// 7. 一鍵打包下載整包分軌 ZIP (含 32-bit WAV + MIDI + Reaper .rpp)
-app.MapPost("/api/jobs/{jobId}/export-zip", (
+// 7. 打包下載指定或整包分軌 ZIP (含 32-bit WAV + MIDI + Reaper .rpp)
+app.MapPost("/api/jobs/{jobId}/export-zip", async (
     string jobId,
-    DagOrchestrator orchestrator) =>
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
 {
     var job = orchestrator.GetJobResult(jobId);
     if (job == null) return Results.NotFound();
+
+    List<string>? selectedNodeIds = null;
+    if (httpReq.HasJsonContentType())
+    {
+        try
+        {
+            using var reader = new StreamReader(httpReq.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("selectedNodes", out var nodesEl) && nodesEl.ValueKind == JsonValueKind.Array)
+                {
+                    selectedNodeIds = nodesEl.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrEmpty(x)).ToList()!;
+                }
+            }
+        }
+        catch { /* fallback to all */ }
+    }
 
     string jobDir = Path.Combine(projectsDir, jobId);
     string rppFileName = $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp";
     string rppPath = Path.Combine(jobDir, rppFileName);
 
-    string zipName = $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge_Stems.zip";
+    bool isFiltered = selectedNodeIds != null && selectedNodeIds.Count > 0 && selectedNodeIds.Count < job.Stems.Count;
+    int exportTrackCount = isFiltered ? selectedNodeIds!.Count : job.Stems.Count;
+    string zipSuffix = isFiltered ? $"_選取{exportTrackCount}軌.zip" : $"_全套{exportTrackCount}軌.zip";
+    string zipName = $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}{zipSuffix}";
     string zipPath = Path.Combine(jobDir, zipName);
 
-    StemZipArchiver.BuildJobZipArchive(zipPath, job, rppPath);
+    StemZipArchiver.BuildJobZipArchive(zipPath, job, rppPath, selectedNodeIds);
     job.ZipArchiveUrl = $"/projects/{jobId}/{Uri.EscapeDataString(zipName)}";
 
     return Results.Ok(new { zipUrl = job.ZipArchiveUrl, fileName = zipName });
 });
 
-// 8. 針對已分離專案動態新增任意自訂樂器音軌 (如 flute / 長笛 / saxophone / 大提琴)
+// 8. 取得本機歷史分軌專案清單
+app.MapGet("/api/projects/history", (DagOrchestrator orchestrator) =>
+{
+    var history = orchestrator.GetHistoryProjects();
+    return Results.Ok(history);
+});
+
+// 9. 載入指定歷史分軌專案完整資料進 DAW
+app.MapGet("/api/projects/{jobId}/load", (string jobId, DagOrchestrator orchestrator) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    return job != null ? Results.Ok(job) : Results.NotFound(new { error = "找不到該歷史專案" });
+});
+
+// 10. 針對已分離專案動態新增任意自訂樂器音軌 (如 flute / 長笛 / saxophone / 大提琴)
 app.MapPost("/api/jobs/{jobId}/prompt/{prompt}", async (
     string jobId,
     string prompt,

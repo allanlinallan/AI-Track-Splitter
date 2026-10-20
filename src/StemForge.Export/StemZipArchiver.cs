@@ -11,7 +11,8 @@ public static class StemZipArchiver
     public static string BuildJobZipArchive(
         string outputZipPath,
         SeparationJobResult jobResult,
-        string? reaperRppPath)
+        string? reaperRppPath,
+        IEnumerable<string>? selectedNodeIds = null)
     {
         var dir = Path.GetDirectoryName(outputZipPath);
         if (!string.IsNullOrEmpty(dir))
@@ -27,8 +28,13 @@ public static class StemZipArchiver
             zip.CreateEntryFromFile(reaperRppPath, Path.GetFileName(reaperRppPath), CompressionLevel.Fastest);
         }
 
+        var nodeSet = selectedNodeIds != null ? new HashSet<string>(selectedNodeIds, StringComparer.OrdinalIgnoreCase) : null;
+
         foreach (var stem in jobResult.Stems)
         {
+            if (nodeSet != null && !nodeSet.Contains(stem.NodeId))
+                continue;
+
             if (File.Exists(stem.FilePath))
             {
                 zip.CreateEntryFromFile(stem.FilePath, Path.GetFileName(stem.FilePath), CompressionLevel.Fastest);

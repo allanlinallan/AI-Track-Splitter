@@ -65,6 +65,11 @@ def run_demucs_cascade_gpu(input_wav: str, model_dir: str):
 
     os.environ["TORCH_HOME"] = model_dir
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    total_vram_gb = (torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)) if device == "cuda" else 0.0
+
+    # 依顯存規格動態調配：8G 以上開啟更高 overlaps 與 shifts，品質更好、推論更快
+    dynamic_overlap = 0.5 if total_vram_gb >= 11.5 else (0.35 if total_vram_gb >= 7.5 else 0.25)
+    dynamic_shifts = 3 if total_vram_gb >= 11.5 else 2
 
     wav_np, orig_sr = read_stereo_float32(input_wav)
     orig_len = len(wav_np)
@@ -94,9 +99,9 @@ def run_demucs_cascade_gpu(input_wav: str, model_dir: str):
                 model_4s,
                 wav_conv,
                 device=device,
-                shifts=2,
+                shifts=dynamic_shifts,
                 split=True,
-                overlap=0.25,
+                overlap=dynamic_overlap,
                 progress=False,
             )[0]
 
@@ -141,9 +146,9 @@ def run_demucs_cascade_gpu(input_wav: str, model_dir: str):
                 model_6s,
                 mel_conv,
                 device=device,
-                shifts=2,
+                shifts=dynamic_shifts,
                 split=True,
-                overlap=0.25,
+                overlap=dynamic_overlap,
                 progress=False,
             )[0]
 

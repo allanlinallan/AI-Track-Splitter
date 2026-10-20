@@ -30,10 +30,143 @@ public sealed class DagOrchestrator
 
     public AudioSeparatorCliRunner CliRunner => _cliRunner;
 
-    public SeparationJobResult? GetJobResult(string jobId) =>
-        _jobs.TryGetValue(jobId, out var res) ? res : null;
+    public SeparationJobResult? GetJobResult(string jobId)
+    {
+        if (_jobs.TryGetValue(jobId, out var res)) return res;
+        return TryRestoreJobFromDisk(jobId);
+    }
 
     public IReadOnlyCollection<SeparationJobResult> GetAllJobs() => _jobs.Values.ToList();
+
+    public IReadOnlyList<HistoryProjectSummary> GetHistoryProjects()
+    {
+        var list = new List<HistoryProjectSummary>();
+        string projectsDir = Path.Combine(_workspaceDataDir, "projects");
+        if (!Directory.Exists(projectsDir)) return list;
+
+        foreach (var dir in Directory.GetDirectories(projectsDir))
+        {
+            string jobId = Path.GetFileName(dir);
+            if (string.Equals(jobId, ".gitkeep", StringComparison.OrdinalIgnoreCase)) continue;
+
+            string stemsDir = Path.Combine(dir, "stems");
+            string origMix = Path.Combine(dir, "00_Original_Mix.wav");
+            if (!File.Exists(origMix) && !Directory.Exists(stemsDir)) continue;
+
+            int stemCount = Directory.Exists(stemsDir) ? Directory.GetFiles(stemsDir, "*.wav").Length : 0;
+            if (stemCount == 0) continue;
+
+            string songName = jobId;
+            string? uploadFile = Directory.GetFiles(dir, "upload_*").FirstOrDefault();
+            if (uploadFile != null)
+            {
+                songName = Path.GetFileName(uploadFile).Replace("upload_", "");
+            }
+            else
+            {
+                string? rpp = Directory.GetFiles(dir, "*_StemForge.rpp").FirstOrDefault();
+                if (rpp != null)
+                {
+                    songName = Path.GetFileName(rpp).Replace("_StemForge.rpp", "");
+                }
+            }
+
+            var dirInfo = new DirectoryInfo(dir);
+            list.Add(new HistoryProjectSummary(
+                JobId: jobId,
+                OriginalFileName: songName,
+                StemCount: stemCount,
+                CreatedAt: dirInfo.LastWriteTime
+            ));
+        }
+
+        return list.OrderByDescending(x => x.CreatedAt).ToList();
+    }
+
+    public SeparationJobResult? TryRestoreJobFromDisk(string jobId)
+    {
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        if (!Directory.Exists(jobDir)) return null;
+
+        string stemsDir = Path.Combine(jobDir, "stems");
+        string origWav = Path.Combine(jobDir, "00_Original_Mix.wav");
+        if (!File.Exists(origWav) || !Directory.Exists(stemsDir)) return null;
+
+        string songName = jobId;
+        string? uploadFile = Directory.GetFiles(jobDir, "upload_*").FirstOrDefault();
+        if (uploadFile != null)
+        {
+            songName = Path.GetFileName(uploadFile).Replace("upload_", "");
+        }
+        else
+        {
+            string? rppFile = Directory.GetFiles(jobDir, "*_StemForge.rpp").FirstOrDefault();
+            if (rppFile != null)
+            {
+                songName = Path.GetFileName(rppFile).Replace("_StemForge.rpp", "");
+            }
+        }
+
+        var stemFiles = Directory.GetFiles(stemsDir, "*.wav");
+        if (stemFiles.Length == 0) return null;
+
+        var stemResults = new List<StemTrackResult>();
+        foreach (var wavPath in stemFiles)
+        {
+            string fn = Path.GetFileName(wavPath);
+            string baseName = Path.GetFileNameWithoutExtension(wavPath);
+
+            var def = StemDagCatalog.AllNodes.FirstOrDefault(n =>
+                string.Equals(n.FilePrefix, baseName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(n.NodeId, baseName, StringComparison.OrdinalIgnoreCase));
+
+            string nodeId = def?.NodeId ?? $"STEM_CUSTOM_{baseName.ToUpperInvariant()}";
+            string displayName = def?.DisplayName ?? baseName;
+            string groupCategory = def?.GroupCategory ?? "Other Tracks";
+            string colorHex = def?.ColorHex ?? "#38BDF8";
+
+            string? midiPath = Path.Combine(jobDir, "midi", $"{baseName}.mid");
+            string? midiUrl = File.Exists(midiPath) ? $"/projects/{jobId}/midi/{baseName}.mid" : null;
+
+            stemResults.Add(new StemTrackResult
+            {
+                NodeId = nodeId,
+                DisplayName = displayName,
+                GroupCategory = groupCategory,
+                ColorHex = colorHex,
+                FilePath = wavPath,
+                RelativeUrl = $"/projects/{jobId}/stems/{fn}",
+                MidiFilePath = File.Exists(midiPath) ? midiPath : null,
+                MidiRelativeUrl = midiUrl,
+                DurationSeconds = 0,
+                SampleRate = 48000,
+                PeakDbFs = -1.0f,
+                RmsDbFs = -20.0f,
+                WaveformPeaks = [],
+                FromCache = true
+            });
+        }
+
+        string rppCandidate = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(songName)}_StemForge.rpp");
+        string? rppUrl = File.Exists(rppCandidate) ? $"/projects/{jobId}/{Uri.EscapeDataString(Path.GetFileName(rppCandidate))}" : null;
+
+        var restored = new SeparationJobResult
+        {
+            JobId = jobId,
+            OriginalFileName = songName,
+            SourceAudioPath = origWav,
+            SourceAudioUrl = $"/projects/{jobId}/00_Original_Mix.wav",
+            ActiveMode = SeparationMode.BitAccurateResidual,
+            DurationSeconds = 0,
+            SampleRate = 48000,
+            NullTestCancellationDbFs = -128.0f,
+            ReaperRppUrl = rppUrl,
+            Stems = stemResults
+        };
+
+        _jobs[jobId] = restored;
+        return restored;
+    }
 
     public async Task<SeparationJobResult> ExecuteSeparationDagAsync(
         SeparationJobRequest request,

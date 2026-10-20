@@ -65,6 +65,29 @@ class StemForgeDawApp {
 
     this.btnDownloadRpp = document.getElementById("btnDownloadRpp");
     this.btnExportZip = document.getElementById("btnExportZip");
+    this.btnExportSelectedZip = document.getElementById("btnExportSelectedZip");
+    this.selectedTracksCountText = document.getElementById("selectedTracksCountText");
+    this.btnOpenHistory = document.getElementById("btnOpenHistory");
+    this.historyModal = document.getElementById("historyModal");
+    this.btnCloseHistory = document.getElementById("btnCloseHistory");
+    this.historyListContainer = document.getElementById("historyListContainer");
+    this.checkedNodeIds = new Set();
+
+    if (this.btnExportSelectedZip) {
+      this.btnExportSelectedZip.addEventListener("click", () => this.exportSelectedZip());
+    }
+
+    if (this.btnOpenHistory) {
+      this.btnOpenHistory.addEventListener("click", () => this.openHistoryModal());
+    }
+    if (this.btnCloseHistory) {
+      this.btnCloseHistory.addEventListener("click", () => this.closeHistoryModal());
+    }
+    if (this.historyModal) {
+      this.historyModal.addEventListener("click", (e) => {
+        if (e.target === this.historyModal) this.closeHistoryModal();
+      });
+    }
 
     // Drag & Drop File Upload
     this.dropzone.addEventListener("click", () => this.fileInput.click());
@@ -442,6 +465,7 @@ class StemForgeDawApp {
       this.btnDownloadRpp.classList.remove("disabled");
     }
     this.btnExportZip.disabled = false;
+    this.checkedNodeIds = new Set();
 
     this.mixerTracksContainer.innerHTML = `<div class="empty-mixer-state">正在將 ${jobResult.stems.length} 條 32-bit Float 音軌解碼載入 WebAudio 同步緩衝區...</div>`;
 
@@ -516,6 +540,9 @@ class StemForgeDawApp {
 
     row.innerHTML = `
       <div class="track-info">
+        <div class="track-select-box">
+          <input type="checkbox" class="track-select-chk" title="勾選以加入自訂打包下載" checked />
+        </div>
         <div class="track-color-bar" style="background:${meta.colorHex}"></div>
         <div class="track-title-wrap">
           <div class="track-name" title="${meta.displayName}">${meta.displayName}</div>
@@ -541,6 +568,7 @@ class StemForgeDawApp {
       </div>
     `;
 
+    const chkSelect = row.querySelector(".track-select-chk");
     const btnSolo = row.querySelector(".m-btn.solo");
     const btnMute = row.querySelector(".m-btn.mute");
     const btnInvert = row.querySelector(".m-btn.invert");
@@ -552,6 +580,19 @@ class StemForgeDawApp {
 
     track.canvas = canvas;
     track.playheadEl = row.querySelector(".track-playhead");
+
+    // 預設全勾選
+    this.checkedNodeIds.add(track.nodeId);
+    this.updateCheckedTracksCount();
+
+    chkSelect.addEventListener("change", () => {
+      if (chkSelect.checked) {
+        this.checkedNodeIds.add(track.nodeId);
+      } else {
+        this.checkedNodeIds.delete(track.nodeId);
+      }
+      this.updateCheckedTracksCount();
+    });
 
     btnSolo.addEventListener("click", () => {
       track.solo = !track.solo;
@@ -830,22 +871,114 @@ class StemForgeDawApp {
     }
   }
 
+  updateCheckedTracksCount() {
+    const count = this.checkedNodeIds ? this.checkedNodeIds.size : 0;
+    if (this.selectedTracksCountText) {
+      this.selectedTracksCountText.textContent = count;
+    }
+    if (this.btnExportSelectedZip) {
+      this.btnExportSelectedZip.disabled = !this.currentJob || count === 0;
+      this.btnExportSelectedZip.innerHTML = `📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">${count}</span>)`;
+      this.selectedTracksCountText = document.getElementById("selectedTracksCountText");
+    }
+  }
+
   async exportFullZip() {
     if (!this.currentJob) return;
     this.btnExportZip.disabled = true;
-    this.btnExportZip.textContent = "⏳ 正在打包 ZIP...";
+    this.btnExportZip.textContent = "⏳ 打包中...";
     try {
       const r = await fetch(`/api/jobs/${this.currentJob.jobId}/export-zip`, { method: "POST" });
       const d = await r.json();
       if (d.zipUrl) {
         const a = document.createElement("a");
-        a.href = d.midiUrl || d.zipUrl;
+        a.href = d.zipUrl;
         a.download = d.fileName;
         a.click();
       }
     } finally {
       this.btnExportZip.disabled = false;
-      this.btnExportZip.textContent = "📦 打包全軌 ZIP (WAV+MIDI+RPP)";
+      this.btnExportZip.textContent = "📦 打包全軌 ZIP";
+    }
+  }
+
+  async exportSelectedZip() {
+    if (!this.currentJob || this.checkedNodeIds.size === 0) return;
+    this.btnExportSelectedZip.disabled = true;
+    this.btnExportSelectedZip.textContent = `⏳ 正在打包 ${this.checkedNodeIds.size} 軌...`;
+    try {
+      const payload = { selectedNodes: Array.from(this.checkedNodeIds) };
+      const r = await fetch(`/api/jobs/${this.currentJob.jobId}/export-zip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (d.zipUrl) {
+        const a = document.createElement("a");
+        a.href = d.zipUrl;
+        a.download = d.fileName;
+        a.click();
+      }
+    } finally {
+      this.btnExportSelectedZip.disabled = false;
+      this.updateCheckedTracksCount();
+    }
+  }
+
+  async openHistoryModal() {
+    if (!this.historyModal) return;
+    this.historyModal.classList.add("active");
+    this.historyListContainer.innerHTML = `<div class="empty-history-text" style="padding: 20px; text-align: center; color: #94a3b8;">正在掃描本機已處理的專案...</div>`;
+
+    try {
+      const res = await fetch(`/api/projects/history?t=${Date.now()}`);
+      const list = await res.json();
+      if (!list || list.length === 0) {
+        this.historyListContainer.innerHTML = `<div class="empty-history-text" style="padding: 20px; text-align: center; color: #94a3b8;">目前尚未有任何已分軌的歷史專案</div>`;
+        return;
+      }
+
+      this.historyListContainer.innerHTML = "";
+      for (const item of list) {
+        const row = document.createElement("div");
+        row.className = "history-item";
+        const dateStr = new Date(item.createdAt).toLocaleString();
+        row.innerHTML = `
+          <div class="history-item-info">
+            <div class="history-item-name" title="${item.originalFileName}">🎵 ${item.originalFileName}</div>
+            <div class="history-item-meta">時間: ${dateStr} | 共 ${item.stemCount} 條已分離音軌</div>
+          </div>
+          <button class="btn-load-item" data-id="${item.jobId}">⚡ 載入混音台</button>
+        `;
+
+        row.querySelector(".btn-load-item").addEventListener("click", async () => {
+          this.closeHistoryModal();
+          await this.loadHistoryProject(item.jobId);
+        });
+
+        this.historyListContainer.appendChild(row);
+      }
+    } catch (err) {
+      this.historyListContainer.innerHTML = `<div class="empty-history-text" style="color: #ef4444; padding: 20px; text-align: center;">載入失敗: ${err.message}</div>`;
+    }
+  }
+
+  closeHistoryModal() {
+    if (this.historyModal) {
+      this.historyModal.classList.remove("active");
+    }
+  }
+
+  async loadHistoryProject(jobId) {
+    try {
+      this.mixerTracksContainer.innerHTML = `<div class="empty-mixer-state">正在載入歷史專案 [${jobId}]...</div>`;
+      const res = await fetch(`/api/projects/${jobId}/load?t=${Date.now()}`);
+      if (!res.ok) throw new Error("找不到該歷史專案檔案");
+      const job = await res.json();
+      await this.loadJobIntoMixer(job);
+    } catch (err) {
+      alert("載入歷史專案失敗: " + err.message);
     }
   }
 

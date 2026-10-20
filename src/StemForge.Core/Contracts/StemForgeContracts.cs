@@ -122,3 +122,10 @@ public sealed record SystemEnvironmentStatus(
     string WorkspaceRootPath,
     double DiskFreeGb
 );
+
+public sealed record HistoryProjectSummary(
+    string JobId,
+    string OriginalFileName,
+    int StemCount,
+    DateTime CreatedAt
+);
