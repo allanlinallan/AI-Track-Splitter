@@ -276,6 +276,29 @@ body {
   color: white;
 }
 
+.btn-zip-selected {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  color: white;
+}
+
+.btn-mixdown-wav {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: white;
+}
+
+.btn-mixdown-wav:hover:not(:disabled) {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+}
+
+.btn-mixdown-mp3 {
+  background: linear-gradient(135deg, #ea580c, #c2410c);
+  color: white;
+}
+
+.btn-mixdown-mp3:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+}
+
 .options-grid {
   display: flex;
   justify-content: space-between;

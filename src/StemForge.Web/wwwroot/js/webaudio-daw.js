@@ -67,6 +67,10 @@ class StemForgeDawApp {
     this.btnExportZip = document.getElementById("btnExportZip");
     this.btnExportSelectedZip = document.getElementById("btnExportSelectedZip");
     this.selectedTracksCountText = document.getElementById("selectedTracksCountText");
+    this.btnExportMixdownWav = document.getElementById("btnExportMixdownWav");
+    this.btnExportMixdownMp3 = document.getElementById("btnExportMixdownMp3");
+    this.mixdownWavCountText = document.getElementById("mixdownWavCountText");
+    this.mixdownMp3CountText = document.getElementById("mixdownMp3CountText");
     this.btnOpenHistory = document.getElementById("btnOpenHistory");
     this.historyModal = document.getElementById("historyModal");
     this.btnCloseHistory = document.getElementById("btnCloseHistory");
@@ -75,6 +79,12 @@ class StemForgeDawApp {
 
     if (this.btnExportSelectedZip) {
       this.btnExportSelectedZip.addEventListener("click", () => this.exportSelectedZip());
+    }
+    if (this.btnExportMixdownWav) {
+      this.btnExportMixdownWav.addEventListener("click", () => this.exportMixdown("wav"));
+    }
+    if (this.btnExportMixdownMp3) {
+      this.btnExportMixdownMp3.addEventListener("click", () => this.exportMixdown("mp3"));
     }
 
     if (this.btnOpenHistory) {
@@ -373,7 +383,7 @@ class StemForgeDawApp {
   async startSeparationJob() {
     const localPath = this.localPathInput.value.trim();
     if (!this.selectedFile && !localPath) {
-      alert("請先選擇 MP3/WAV 檔案，或貼上本機檔案路徑，或點「⚡ 載入內建測試曲」！");
+      alert("請先選擇 MP3/WAV/FLAC 或 MP4 影片檔案，或貼上本機檔案路徑，或點「⚡ 載入測試曲」！");
       return;
     }
 
@@ -876,10 +886,63 @@ class StemForgeDawApp {
     if (this.selectedTracksCountText) {
       this.selectedTracksCountText.textContent = count;
     }
+    const hasActiveJob = !!this.currentJob && count > 0;
+
     if (this.btnExportSelectedZip) {
-      this.btnExportSelectedZip.disabled = !this.currentJob || count === 0;
+      this.btnExportSelectedZip.disabled = !hasActiveJob;
       this.btnExportSelectedZip.innerHTML = `📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">${count}</span>)`;
       this.selectedTracksCountText = document.getElementById("selectedTracksCountText");
+    }
+    if (this.btnExportMixdownWav) {
+      this.btnExportMixdownWav.disabled = !hasActiveJob;
+      this.btnExportMixdownWav.innerHTML = `🎚️ 合併匯出 WAV (<span id="mixdownWavCountText">${count}</span>)`;
+      this.mixdownWavCountText = document.getElementById("mixdownWavCountText");
+    }
+    if (this.btnExportMixdownMp3) {
+      this.btnExportMixdownMp3.disabled = !hasActiveJob;
+      this.btnExportMixdownMp3.innerHTML = `🎵 合併匯出 MP3 (<span id="mixdownMp3CountText">${count}</span>)`;
+      this.mixdownMp3CountText = document.getElementById("mixdownMp3CountText");
+    }
+  }
+
+  async exportMixdown(format = "wav") {
+    if (!this.currentJob || this.checkedNodeIds.size === 0) return;
+    const isMp3 = format === "mp3";
+    const targetBtn = isMp3 ? this.btnExportMixdownMp3 : this.btnExportMixdownWav;
+    const origHtml = targetBtn ? targetBtn.innerHTML : "";
+    if (targetBtn) {
+      targetBtn.disabled = true;
+      targetBtn.textContent = isMp3 ? "⏳ MP3 轉碼中..." : "⏳ WAV 混音中...";
+    }
+
+    try {
+      const payload = {
+        selectedNodes: Array.from(this.checkedNodeIds),
+        format: format
+      };
+      const r = await fetch(`/api/jobs/${this.currentJob.jobId}/mixdown`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "合併混音失敗");
+      if (d.url) {
+        const a = document.createElement("a");
+        a.href = d.url;
+        a.download = d.fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } catch (err) {
+      alert(`合併匯出失敗: ${err.message}`);
+    } finally {
+      if (targetBtn) {
+        targetBtn.disabled = false;
+        targetBtn.innerHTML = origHtml;
+      }
+      this.updateCheckedTracksCount();
     }
   }
 

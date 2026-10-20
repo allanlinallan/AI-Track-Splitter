@@ -32,17 +32,21 @@
 3. **母帶級相位驗證（Null-Test Bit-Accurate Verification）**
    - 內建數學級殘差守恆演算法（Residual Conservator）。
    - 全部分軌疊加後與原始混音反相抵消誤差達到 **`-126.4 dBFS`**，確保 100% 無相位失真與聲音遺漏。
-4. **內建 WebAudio 多軌混音 DAW**
+4. **內建 WebAudio 多軌混音 DAW & 即時合併匯出**
    - 瀏覽器原生 21 軌無損同步播放、Solo / Mute / Pan / 音量推桿 / 單軌相位反轉（Ø）。
    - 4 種分離模式 0 秒即時切換（純淨隔離、比特無損殘差、能量比例回填、AI 乾音訓練）。
-   - 一鍵匯出：支援**多軌勾選打包 ZIP**（檔名自動標記軌數如 `_選取10軌.zip`）、**Reaper 工程檔 (`.rpp`)** 與自動轉換 MIDI 音符。
-5. **歷史專案 0 秒即時回載（History Projects）**
+   - **分軌即時合併匯出 (Submix / Mixdown)**：勾選任意音軌組合（如去人聲伴奏、主唱+和聲、純節奏組），一鍵**合併匯出無損 32-bit Float WAV** 或 **320kbps MP3**，以 C# SIMD 向量化平行累加，免開外部 DAW。
+   - 完整匯出套件：支援**多軌勾選打包 ZIP**（檔名自動標記軌數如 `_選取10軌.zip`）、**Reaper 工程檔 (`.rpp`)** 與自動轉換 MIDI 音符。
+5. **支援 MP4 / 影片容器自動音訊提取 (Video Demuxing)**
+   - 支援直接上傳或拖曳 `.mp4`、`.mkv`、`.mov`、`.webm` 等影片檔案。
+   - 內部透過本機 FFmpeg 自動以 32-bit Float 無損抽離雙聲道音訊，無需手動預先轉檔即可直接進入 19+ 軌深度分離。
+6. **歷史專案 0 秒即時回載（History Projects）**
    - 內建本機分軌歷史資料庫，隨時彈窗點選歷史歌曲「⚡ 載入混音台」。
-   - 免重新上傳、免重新計算，即時回播 21 軌音訊並切換模式或重新打包。
-6. **智慧硬體動態感知（Adaptive GPU Scaling）**
+   - 免重新上傳、免重新計算，即時回播 21 軌音訊並切換模式、合併混音或重新打包。
+7. **智慧硬體動態感知（Adaptive GPU Scaling）**
    - 自動即時探測本機顯卡規格（RTX 4050 / 4060 Ti / 4080 / 4090）。
    - 8GB / 16GB 以上 VRAM 自動切換更高 overlap 與多重相移（shifts）採樣，運算更快、音質更細膩。
-7. **物理顯存釋放（Zero VRAM Leak）**
+8. **物理顯存釋放（Zero VRAM Leak）**
    - AI 模型推論透過獨立 CLI 進程執行，推論結束立即退出，由作業系統 100% 物理回收顯存。
 
 ---
@@ -100,17 +104,21 @@ dotnet run --project src/StemForge.Web/StemForge.Web.csproj --urls http://localh
 3. **Master-Grade Null-Test Residual Conservation**
    - Mathematically accurate residual conservation algorithm.
    - Summing all stems and phase-inverting against the original mix yields cancellation down to **`-126.4 dBFS`**, guaranteeing zero phase smearing or lost transients.
-4. **Interactive WebAudio Multitrack DAW**
+4. **Interactive WebAudio Multitrack DAW & Instant Stem Mixdown**
    - Zero-latency multitrack playback, Solo / Mute / Pan / Volume sliders / Phase inversion (Ø).
    - Zero-second instant switching between 4 separation modes (Bit-Accurate Residual, Bit-Accurate Proportional, Pure Isolation, AI Training Dry).
+   - **Instant Submix / Mixdown Export**: Select any combination of stems (e.g., Karaoke backing, Lead+Harmonies, Rhythm section) to export as a merged **32-bit Float WAV** or **320kbps MP3**, summed with C# SIMD parallelism without opening external DAWs.
    - Full Export Suite: **Selective multitrack ZIP packaging** (with auto track count in filename), **Reaper Project files (`.rpp`)**, and MIDI note transcriptions.
-5. **Instant Local History Project Re-loading**
+5. **Video Container & Audio Demuxing (`.mp4`, `.mkv`, `.mov`)**
+   - Upload or drag-and-drop `.mp4`, `.mkv`, `.mov`, `.webm` video files directly.
+   - Automatically extracts lossy/lossless audio tracks into 32-bit Float stereo WAV via local FFmpeg, skipping tedious manual conversion before 19+ stem separation.
+6. **Instant Local History Project Re-loading**
    - Built-in local project library allowing zero-latency reload of previously processed songs.
-   - Jump straight back into the 21-track mixer, adjust modes, and export without re-uploading or re-running AI inference.
-6. **Adaptive Hardware & GPU Specification Scaling**
+   - Jump straight back into the 21-track mixer, adjust modes, mixdown stems, and export without re-uploading or re-running AI inference.
+7. **Adaptive Hardware & GPU Specification Scaling**
    - Dynamically probes GPU hardware (RTX 4050, 4060 Ti, 4080, 4090) at runtime.
    - Automatically unleashes higher overlaps and multi-shift sampling on 8GB / 16GB+ VRAM cards for enhanced acoustic fidelity and ultra-fast inference.
-7. **Guaranteed Zero VRAM Leaks**
+8. **Guaranteed Zero VRAM Leaks**
    - PyTorch inference runs via ephemeral subprocesses that terminate immediately upon stage completion, ensuring 100% physical recovery of GPU VRAM by Windows OS.
 
 ---

@@ -26,16 +26,16 @@
     <!-- 左側控制面板：音源輸入 + 模式選擇 + 19軌互動式分軌樹 -->
     <aside class="sidebar">
       <section class="panel-card">
-        <div class="panel-title">1. 音源載入 (MP3 / WAV / FLAC)</div>
+        <div class="panel-title">1. 音源載入 (MP3 / WAV / FLAC / MP4 影片)</div>
         <div class="dropzone" id="dropzone">
-          <input type="file" id="audioFileInput" accept=".mp3,.wav,.flac,.m4a,.ogg" hidden />
+          <input type="file" id="audioFileInput" accept=".mp3,.wav,.flac,.m4a,.ogg,.mp4,.mkv,.mov,.m4v,.webm" hidden />
           <div class="drop-icon">🎵</div>
-          <div id="selectedFileLabel" class="drop-title">點擊選擇或拖曳音樂檔案至此</div>
-          <div class="drop-sub">支援任意採樣率 MP3 / WAV / FLAC，內部統一以 32-bit IEEE Float 處理</div>
+          <div id="selectedFileLabel" class="drop-title">點擊選擇或拖曳音樂 / 影片檔案至此</div>
+          <div class="drop-sub">支援 MP3 / WAV / FLAC 及 MP4 / MKV / MOV 影片（自動抽離音訊），32-bit Float 雙聲道處理</div>
         </div>
 
         <div class="local-path-box">
-          <input type="text" id="localPathInput" placeholder="或直接貼上本機檔案路徑 (如 D:\music\song.mp3)" />
+          <input type="text" id="localPathInput" placeholder="或直接貼上本機檔案路徑 (如 D:\music\song.mp3 或 video.mp4)" />
         </div>
 
         <div class="action-row">
@@ -140,6 +140,8 @@
           <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
           <button class="btn btn-zip" id="btnExportZip" disabled title="打包下載全部分軌">📦 打包全軌 ZIP</button>
           <button class="btn btn-zip btn-zip-selected" id="btnExportSelectedZip" disabled title="僅打包勾選的分軌 WAV 檔">📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">0</span>)</button>
+          <button class="btn btn-mixdown btn-mixdown-wav" id="btnExportMixdownWav" disabled title="將已勾選的所有分軌即時混音為無損 32-bit Float WAV 下載">🎚️ 合併匯出 WAV (<span id="mixdownWavCountText">0</span>)</button>
+          <button class="btn btn-mixdown btn-mixdown-mp3" id="btnExportMixdownMp3" disabled title="將已勾選的所有分軌即時混音為 320kbps MP3 下載">🎵 合併匯出 MP3 (<span id="mixdownMp3CountText">0</span>)</button>
         </div>
       </section>
 

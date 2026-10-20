@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics.Tensors;
 using NAudio.Wave;
 
@@ -40,9 +41,93 @@ public sealed class StereoAudioBuffer
 public static class WavFileIo
 {
     /// <summary>
-    /// 讀取 MP3 / WAV / FLAC 音訊檔並轉為雙聲道 32-bit Float 陣列
+    /// 讀取 MP3 / WAV / FLAC / MP4 / MKV / MOV 等音訊或影片檔，若為影片或非標準格式則自動以 FFmpeg 提取無損 32-bit Float 雙聲道
     /// </summary>
     public static StereoAudioBuffer ReadStereoAudio(string filePath)
+    {
+        string ext = Path.GetExtension(filePath).ToLowerInvariant();
+        bool isVideoOrContainer = ext is ".mp4" or ".m4v" or ".mkv" or ".mov" or ".webm" or ".avi" or ".flv" or ".wmv";
+
+        if (isVideoOrContainer)
+        {
+            string tempWav = Path.Combine(Path.GetTempPath(), $"stemforge_demux_{Guid.NewGuid():N}.wav");
+            try
+            {
+                ExtractAudioViaFfmpeg(filePath, tempWav);
+                return ReadAudioViaNAudio(tempWav);
+            }
+            finally
+            {
+                if (File.Exists(tempWav))
+                {
+                    try { File.Delete(tempWav); } catch { }
+                }
+            }
+        }
+
+        try
+        {
+            return ReadAudioViaNAudio(filePath);
+        }
+        catch
+        {
+            // 若 NAudio 格式解碼器失敗 (例如特規 AAC / OGG / OPUS)，使用 FFmpeg 作為 Universal Fallback
+            string fallbackWav = Path.Combine(Path.GetTempPath(), $"stemforge_fallback_{Guid.NewGuid():N}.wav");
+            try
+            {
+                ExtractAudioViaFfmpeg(filePath, fallbackWav);
+                return ReadAudioViaNAudio(fallbackWav);
+            }
+            finally
+            {
+                if (File.Exists(fallbackWav))
+                {
+                    try { File.Delete(fallbackWav); } catch { }
+                }
+            }
+        }
+    }
+
+    private static string ResolveFfmpegPath()
+    {
+        string[] candidates =
+        [
+            @"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+            @"C:\ffmpeg\bin\ffmpeg.exe",
+            @"ffmpeg.exe"
+        ];
+        foreach (var c in candidates)
+        {
+            if (File.Exists(c)) return c;
+        }
+        return "ffmpeg";
+    }
+
+    private static void ExtractAudioViaFfmpeg(string inputPath, string outputWavPath)
+    {
+        string ffmpegPath = ResolveFfmpegPath();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            Arguments = $"-y -i \"{inputPath}\" -vn -ac 2 -ar 44100 -f wav \"{outputWavPath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
+        };
+
+        using var proc = Process.Start(psi);
+        if (proc == null) throw new InvalidOperationException("無法啟動 FFmpeg 音訊提取進程。");
+        proc.WaitForExit();
+        if (proc.ExitCode != 0 || !File.Exists(outputWavPath))
+        {
+            string err = proc.StandardError.ReadToEnd();
+            throw new InvalidOperationException($"FFmpeg 提取 MP4 音訊失敗: {err}");
+        }
+    }
+
+    private static StereoAudioBuffer ReadAudioViaNAudio(string filePath)
     {
         using var reader = new AudioFileReader(filePath);
         int sr = reader.WaveFormat.SampleRate;
@@ -166,5 +251,70 @@ public static class WavFileIo
         Array.Copy(source.Left, aligned.Left, copyLen);
         Array.Copy(source.Right, aligned.Right, copyLen);
         return aligned;
+    }
+
+    /// <summary>
+    /// 將多個立體聲音軌以 SIMD Vectorized 平行累加混音 (Mixdown / Summation)
+    /// </summary>
+    public static StereoAudioBuffer Mixdown(IReadOnlyList<StereoAudioBuffer> buffers)
+    {
+        if (buffers.Count == 0)
+            return new StereoAudioBuffer(44100, 0);
+
+        int maxLen = 0;
+        int sampleRate = buffers[0].SampleRate;
+        foreach (var b in buffers)
+        {
+            if (b.Length > maxLen) maxLen = b.Length;
+        }
+
+        var sumL = new float[maxLen];
+        var sumR = new float[maxLen];
+
+        foreach (var b in buffers)
+        {
+            int len = b.Length;
+            if (len == maxLen)
+            {
+                TensorPrimitives.Add(sumL, b.Left, sumL);
+                TensorPrimitives.Add(sumR, b.Right, sumR);
+            }
+            else
+            {
+                TensorPrimitives.Add(sumL.AsSpan(0, len), b.Left, sumL.AsSpan(0, len));
+                TensorPrimitives.Add(sumR.AsSpan(0, len), b.Right, sumR.AsSpan(0, len));
+            }
+        }
+
+        return new StereoAudioBuffer(sampleRate, sumL, sumR);
+    }
+
+    /// <summary>
+    /// 使用 FFmpeg 將 WAV 轉碼為指定碼率的高音質 MP3 (預設 320kbps CBR)
+    /// </summary>
+    public static void ConvertWavToMp3(string inputWavPath, string outputMp3Path, int bitrateKbps = 320)
+    {
+        string ffmpegPath = ResolveFfmpegPath();
+        var dir = Path.GetDirectoryName(outputMp3Path);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            Arguments = $"-y -i \"{inputWavPath}\" -vn -c:a libmp3lame -b:a {bitrateKbps}k \"{outputMp3Path}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
+        };
+
+        using var proc = Process.Start(psi);
+        if (proc == null) throw new InvalidOperationException("無法啟動 FFmpeg 轉碼進程。");
+        proc.WaitForExit();
+        if (proc.ExitCode != 0 || !File.Exists(outputMp3Path))
+        {
+            string err = proc.StandardError.ReadToEnd();
+            throw new InvalidOperationException($"FFmpeg 轉 MP3 失敗: {err}");
+        }
     }
 }

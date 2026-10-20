@@ -45,8 +45,12 @@ workspace_data/models/hub/
 ## Build Artifacts & Portables (Use GitHub Releases instead)
 ## -------------------------------------------------------------
 Release_Portable/
-StemForge_Portable_Win64.zip
+StemForge_*_Portable_Win64/
+StemForge_*.zip
+*.zip
 *.log
+test_audio.mp4
+.gemini/
 
 ## OS Specific
 .DS_Store

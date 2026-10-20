@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.FileProviders;
 using StemForge.Core.Contracts;
 using StemForge.Core.Dag;
+using StemForge.Dsp;
 using StemForge.Export;
 using StemForge.Inference;
 using StemForge.Web;
@@ -65,7 +67,30 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddSignalR();
 builder.Services.AddSingleton(_ => new DagOrchestrator(solutionRoot, workspaceDataDir));
 
+// 預設綁定 5188 埠，並自動開啟預設瀏覽器（若外部未指定 --urls）
+string defaultUrl = "http://localhost:5188";
+if (!args.Any(a => a.StartsWith("--urls", StringComparison.OrdinalIgnoreCase)))
+{
+    builder.WebHost.UseUrls(defaultUrl);
+}
+
 var app = builder.Build();
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    try
+    {
+        string openUrl = defaultUrl;
+        var urls = app.Urls;
+        if (urls.Count > 0) openUrl = urls.First();
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = openUrl,
+            UseShellExecute = true
+        });
+    }
+    catch { /* 忽略自動開啟瀏覽器失敗 */ }
+});
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -145,7 +170,7 @@ app.MapPost("/api/jobs/separate", async (
         }
         else
         {
-            return Results.BadRequest(new { error = "請上傳 MP3/WAV/FLAC 檔案或輸入有效的本地檔案路徑。" });
+            return Results.BadRequest(new { error = "請上傳 MP3/WAV/FLAC/MP4 檔案或輸入有效的本地檔案路徑。" });
         }
 
         if (form.TryGetValue("selectedNodes", out var nodesVal) && !string.IsNullOrWhiteSpace(nodesVal))
@@ -334,6 +359,102 @@ app.MapPost("/api/jobs/{jobId}/export-zip", async (
     job.ZipArchiveUrl = $"/projects/{jobId}/{Uri.EscapeDataString(zipName)}";
 
     return Results.Ok(new { zipUrl = job.ZipArchiveUrl, fileName = zipName });
+});
+
+// 7.5 合併下載已勾選分軌音訊 (WAV 或 MP3)
+app.MapPost("/api/jobs/{jobId}/mixdown", async (
+    string jobId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    List<string>? selectedNodeIds = null;
+    string format = "wav"; // "wav" or "mp3"
+
+    if (httpReq.HasJsonContentType())
+    {
+        try
+        {
+            using var reader = new StreamReader(httpReq.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("selectedNodes", out var nodesEl) && nodesEl.ValueKind == JsonValueKind.Array)
+                {
+                    selectedNodeIds = nodesEl.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrEmpty(x)).ToList()!;
+                }
+                if (doc.RootElement.TryGetProperty("format", out var formatEl))
+                {
+                    format = formatEl.GetString()?.ToLowerInvariant() ?? "wav";
+                }
+            }
+        }
+        catch { }
+    }
+
+    var activeStems = (selectedNodeIds != null && selectedNodeIds.Count > 0)
+        ? job.Stems.Where(s => selectedNodeIds.Contains(s.NodeId, StringComparer.OrdinalIgnoreCase)).ToList()
+        : job.Stems.ToList();
+
+    if (activeStems.Count == 0)
+    {
+        return Results.BadRequest(new { error = "請至少選擇一個音軌進行合併匯出。" });
+    }
+
+    var buffers = new List<StereoAudioBuffer>(activeStems.Count);
+    foreach (var stem in activeStems)
+    {
+        if (File.Exists(stem.FilePath))
+        {
+            buffers.Add(WavFileIo.ReadStereoAudio(stem.FilePath));
+        }
+    }
+
+    if (buffers.Count == 0)
+    {
+        return Results.BadRequest(new { error = "所選音軌實體檔案不存在。" });
+    }
+
+    var mixdownBuffer = WavFileIo.Mixdown(buffers);
+    string jobDir = Path.Combine(projectsDir, jobId);
+    string baseSongName = Path.GetFileNameWithoutExtension(job.OriginalFileName);
+    int trackCount = activeStems.Count;
+
+    if (format == "mp3")
+    {
+        string tempWavPath = Path.Combine(Path.GetTempPath(), $"mixdown_{Guid.NewGuid():N}.wav");
+        string mp3Name = $"{baseSongName}_合併{trackCount}軌.mp3";
+        string mp3Path = Path.Combine(jobDir, mp3Name);
+
+        try
+        {
+            WavFileIo.WriteFloat32Wav(tempWavPath, mixdownBuffer);
+            WavFileIo.ConvertWavToMp3(tempWavPath, mp3Path, 320);
+        }
+        finally
+        {
+            if (File.Exists(tempWavPath))
+            {
+                try { File.Delete(tempWavPath); } catch { }
+            }
+        }
+
+        string fileUrl = $"/projects/{jobId}/{Uri.EscapeDataString(mp3Name)}";
+        return Results.Ok(new { url = fileUrl, fileName = mp3Name, trackCount, format = "mp3" });
+    }
+    else
+    {
+        string wavName = $"{baseSongName}_合併{trackCount}軌.wav";
+        string wavPath = Path.Combine(jobDir, wavName);
+        WavFileIo.WriteFloat32Wav(wavPath, mixdownBuffer);
+
+        string fileUrl = $"/projects/{jobId}/{Uri.EscapeDataString(wavName)}";
+        return Results.Ok(new { url = fileUrl, fileName = wavName, trackCount, format = "wav" });
+    }
 });
 
 // 8. 取得本機歷史分軌專案清單
