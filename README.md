@@ -10,7 +10,7 @@
 
 ![StemForge Studio DAW Interface](docs/images/stemforge_studio_ui.png)
 
-[**繁體中文 (Traditional Chinese)**](#繁體中文) | [**English Documentation**](#english)
+[**繁體中文 (Traditional Chinese)**](#繁體中文) | [**English Documentation**](#english) | [**📖 圖文詳細操作手冊 (User Manual)**](docs/USER_GUIDE.md)
 
 ---
 
