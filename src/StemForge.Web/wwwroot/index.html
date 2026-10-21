@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
   <link rel="stylesheet" href="/css/daw.css?v=4" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
 </head>
 <body>
@@ -40,7 +41,6 @@
 
         <div class="action-row">
           <button class="btn btn-primary" id="btnStartSeparate">🚀 開始精細分軌</button>
-          <button class="btn btn-accent" id="btnRunDemo" title="立即合成一首含主唱、和聲、鼓組、貝斯、吉他、弦樂的8秒測試曲並拆解19軌">⚡ 載入測試曲</button>
           <button class="btn btn-secondary" id="btnOpenHistory" title="載入之前已完成分軌的歷史專案">📂 載入歷史專案</button>
         </div>
       </section>
@@ -103,7 +103,7 @@
         <div class="progress-header">
           <div>
             <span class="stage-tag" id="progressStageTag">READY</span>
-            <strong id="progressTitleText">等待啟動分軌任務...（可直接點左側「⚡ 載入內建測試曲」立即體驗 19 軌混音台）</strong>
+            <strong id="progressTitleText">等待啟動分軌任務...（請於左側上傳音訊/影片或載入歷史專案）</strong>
           </div>
           <span class="pct-num" id="progressPctText">0%</span>
         </div>
@@ -136,6 +136,23 @@
           <span id="nullCancellationBadge" class="null-badge" title="所有分軌相加與原曲的最大相位誤差">Null 誤差: -- dBFS</span>
         </div>
 
+        <!-- AI 神經變調控制組 (原調偵測 + ±6半音升降桿 + 一鍵恢復) -->
+        <div class="pitch-shift-panel" id="pitchShiftPanel">
+          <div class="pitch-key-info">
+            <span class="pitch-badge-orig" id="detectedKeyBadge" title="AI 辨識歌曲原始調性">原調: --</span>
+            <span class="pitch-arrow">➔</span>
+            <span class="pitch-badge-target" id="targetKeyBadge" title="當前變調目標調性">目標: 原調 (0)</span>
+          </div>
+          <div class="pitch-controls-row">
+            <button class="pitch-step-btn" id="btnPitchDown" title="降 1 個半音">-1</button>
+            <input type="range" id="pitchShiftSlider" min="-6" max="6" step="1" value="0" title="升降 Key (±6 半音)" />
+            <button class="pitch-step-btn" id="btnPitchUp" title="升 1 個半音">+1</button>
+            <span class="pitch-value-label" id="pitchValueLabel">0 半音</span>
+            <button class="btn-xs btn-pitch-apply" id="btnApplyPitch" title="確定並執行神經變調">⚡ 套用變調</button>
+            <button class="btn-xs btn-pitch-reset" id="btnResetPitch" title="一鍵重設回原調 (0 半音)">⟲ 恢復原調</button>
+          </div>
+        </div>
+
         <div class="export-actions">
           <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
           <button class="btn btn-zip" id="btnExportZip" disabled title="打包下載全部分軌">📦 打包全軌 ZIP</button>
@@ -152,11 +169,30 @@
       </div>
 
       <!-- 多軌同步混音台列表 (Channel Strips + Canvas Waveforms) -->
-      <section class="mixer-tracks-container" id="mixerTracksContainer">
-        <div class="empty-mixer-state">
-          <div class="empty-icon">🎚️</div>
-          <h3>多軌同步 DAW 混音台已就緒</h3>
-          <p>請在左側上傳音樂檔案，或點擊 <strong>「📂 載入歷史專案」</strong> 快速回播已處理過的分軌。</p>
+      <section class="mixer-wrapper" id="mixerWrapper">
+        <section class="mixer-tracks-container" id="mixerTracksContainer">
+          <div class="empty-mixer-state">
+            <div class="empty-icon">🎚️</div>
+            <h3>多軌同步 DAW 混音台已就緒</h3>
+            <p>請在左側上傳音樂檔案，或點擊 <strong>「📂 載入歷史專案」</strong> 快速回播已處理過的分軌。</p>
+          </div>
+        </section>
+
+        <!-- 處理中半透明變暗遮罩層 (Busy Overlay) -->
+        <div class="mixer-busy-overlay" id="mixerBusyOverlay">
+          <div class="busy-card">
+            <div class="busy-spinner-wrap">
+              <div class="busy-spinner-glow"></div>
+              <div class="busy-spinner-ring"></div>
+              <div class="busy-spinner-icon" id="busySpinnerIcon">⚡</div>
+            </div>
+            <div class="busy-title" id="busyOverlayTitle">AI 處理中...</div>
+            <div class="busy-sub" id="busyOverlaySub">請稍候，正在進行演算...</div>
+            <div class="busy-track">
+              <div class="busy-fill" id="busyOverlayFill" style="width: 0%"></div>
+            </div>
+            <div class="busy-pct-text" id="busyOverlayPct">0%</div>
+          </div>
         </div>
       </section>
     </main>
@@ -175,6 +211,6 @@
     </div>
   </div>
 
-  <script src="/js/webaudio-daw.js?v=13"></script>
+  <script src="/js/webaudio-daw.js?v=16"></script>
 </body>
 </html>

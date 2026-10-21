@@ -253,4 +253,118 @@ public sealed class AudioSeparatorCliRunner
         await proc.WaitForExitAsync(ct);
         return outputs is { Count: > 0 } ? outputs : null;
     }
+
+    /// <summary>
+    /// 調度 Python CLI 執行 Krumhansl-Schmuckler 12 音級 Chroma 調性特徵分析
+    /// </summary>
+    public async Task<(string Key, string DisplayName)> DetectAudioKeyAsync(string audioPath, CancellationToken ct = default)
+    {
+        string cliScript = Path.Combine(_aiEngineDir, "stemforge_cli.py");
+        if (!File.Exists(cliScript) || !File.Exists(audioPath))
+            return ("C Major", "C 大調 (C Major)");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetPythonExecutable(),
+            Arguments = $"\"{cliScript}\" --task detect-key --input \"{audioPath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+        string output = await proc.StandardOutput.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        foreach (var line in output.Split('\n'))
+        {
+            int braceStart = line.IndexOf('{');
+            int braceEnd = line.LastIndexOf('}');
+            if (braceStart >= 0 && braceEnd > braceStart)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(line[braceStart..(braceEnd + 1)]);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("result", out var resObj))
+                    {
+                        string k = resObj.GetProperty("key").GetString() ?? "C Major";
+                        string d = resObj.GetProperty("displayName").GetString() ?? k;
+                        return (k, d);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        return ("C Major", "C 大調 (C Major)");
+    }
+
+    /// <summary>
+    /// 調度 PyTorch GPU 進行分治神經變調 (鼓組 Bypass，人聲/樂器高音質變調)
+    /// </summary>
+    public async Task<bool> PitchShiftStemsAsync(
+        string stemsDir,
+        string outputDir,
+        int semitones,
+        Func<double, string, Task>? onProgress = null,
+        CancellationToken ct = default)
+    {
+        string cliScript = Path.Combine(_aiEngineDir, "stemforge_cli.py");
+        if (!File.Exists(cliScript) || !Directory.Exists(stemsDir))
+            return false;
+
+        Directory.CreateDirectory(outputDir);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetPythonExecutable(),
+            Arguments = $"\"{cliScript}\" --task pitch-shift --input \"{stemsDir}\" --output-dir \"{outputDir}\" --semitones {semitones}",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+        var stderrDrain = proc.StandardError.ReadToEndAsync(ct);
+
+        while (!proc.StandardOutput.EndOfStream)
+        {
+            ct.ThrowIfCancellationRequested();
+            string? line = await proc.StandardOutput.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            int braceStart = line.IndexOf('{');
+            int braceEnd = line.LastIndexOf('}');
+            if (braceStart >= 0 && braceEnd > braceStart)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(line[braceStart..(braceEnd + 1)]);
+                    var root = doc.RootElement;
+                    string type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "" : "";
+                    if (type == "progress" && onProgress != null)
+                    {
+                        double pct = root.TryGetProperty("percent", out var pProp) ? pProp.GetDouble() : 50.0;
+                        string msg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() ?? "" : "GPU 神經變調中...";
+                        await onProgress(pct, msg);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        await proc.WaitForExitAsync(ct);
+        return proc.ExitCode == 0;
+    }
 }

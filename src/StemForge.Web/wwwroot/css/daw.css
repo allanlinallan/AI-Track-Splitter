@@ -553,6 +553,121 @@ body {
   font-size: 11.5px;
 }
 
+/* Pitch Shift Panel */
+.pitch-shift-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #090e1a;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.pitch-key-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.pitch-badge-orig {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  color: #60a5fa;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.pitch-arrow {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.pitch-badge-target {
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  color: #c084fc;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.pitch-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pitch-controls-row input[type="range"] {
+  width: 90px;
+  height: 5px;
+  accent-color: #a855f7;
+  cursor: pointer;
+}
+
+.pitch-step-btn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pitch-step-btn:hover {
+  background: #334155;
+  color: white;
+}
+
+.pitch-value-label {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+  min-width: 48px;
+  text-align: center;
+}
+
+.btn-pitch-apply {
+  background: linear-gradient(135deg, #9333ea, #7c3aed);
+  border: 1px solid #a855f7;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-pitch-apply:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a855f7, #9333ea);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+}
+
+.btn-pitch-reset {
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #94a3b8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-pitch-reset:hover {
+  background: #f43f5e;
+  border-color: #f43f5e;
+  color: white;
+}
+
 .timeline-scrubber {
   height: 14px;
   background: #0b0f19;
@@ -575,6 +690,138 @@ body {
   width: 2px;
   background: #f43f5e;
   pointer-events: none;
+}
+
+/* Mixer Wrapper — 容納混音軌道與即時處理遮罩 */
+.mixer-wrapper {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 處理中半透明變暗遮罩層 (Busy Overlay) */
+.mixer-busy-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 11, 20, 0.84);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+
+.mixer-busy-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.busy-card {
+  background: #111827;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8), 0 0 35px rgba(59, 130, 246, 0.18);
+  border-radius: 12px;
+  padding: 24px 32px;
+  width: 90%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  transform: scale(0.96);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mixer-busy-overlay.active .busy-card {
+  transform: scale(1);
+}
+
+.busy-spinner-wrap {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.busy-spinner-glow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.45) 0%, rgba(59, 130, 246, 0) 70%);
+  animation: pulseGlow 1.8s infinite alternate ease-in-out;
+}
+
+.busy-spinner-ring {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid rgba(148, 163, 184, 0.2);
+  border-top-color: #a855f7;
+  border-right-color: #38bdf8;
+  animation: spinRing 0.9s linear infinite;
+}
+
+.busy-spinner-icon {
+  position: absolute;
+  font-size: 22px;
+  user-select: none;
+}
+
+@keyframes spinRing {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulseGlow {
+  0% { opacity: 0.35; transform: scale(0.95); }
+  100% { opacity: 0.85; transform: scale(1.1); }
+}
+
+.busy-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 5px;
+}
+
+.busy-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 14px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.busy-track {
+  width: 100%;
+  height: 6px;
+  background: #1e293b;
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.busy-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #3b82f6, #10b981);
+  transition: width 0.2s ease;
+}
+
+.busy-pct-text {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #38bdf8;
 }
 
 /* Mixer Tracks — 獨立垂直捲動容器 */

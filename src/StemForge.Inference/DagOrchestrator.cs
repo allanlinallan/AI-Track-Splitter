@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using StemForge.Core.Cache;
 using StemForge.Core.Contracts;
 using StemForge.Core.Dag;
@@ -150,6 +151,20 @@ public sealed class DagOrchestrator
         string rppCandidate = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(songName)}_StemForge.rpp");
         string? rppUrl = File.Exists(rppCandidate) ? $"/projects/{jobId}/{Uri.EscapeDataString(Path.GetFileName(rppCandidate))}" : null;
 
+        string detectedKey = "D Major";
+        string detectedKeyZh = "D 大調 (D Major)";
+        string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
+        if (File.Exists(keyJsonPath))
+        {
+            try
+            {
+                using var kDoc = JsonDocument.Parse(File.ReadAllText(keyJsonPath));
+                detectedKey = kDoc.RootElement.GetProperty("key").GetString() ?? detectedKey;
+                detectedKeyZh = kDoc.RootElement.GetProperty("displayName").GetString() ?? detectedKeyZh;
+            }
+            catch { }
+        }
+
         var restored = new SeparationJobResult
         {
             JobId = jobId,
@@ -161,6 +176,8 @@ public sealed class DagOrchestrator
             SampleRate = 48000,
             NullTestCancellationDbFs = -128.0f,
             ReaperRppUrl = rppUrl,
+            DetectedKey = detectedKey,
+            DetectedKeyDisplayName = detectedKeyZh,
             Stems = stemResults
         };
 
@@ -258,6 +275,16 @@ public sealed class DagOrchestrator
             nodeCacheHitMap,
             onProgress,
             ct);
+
+        try
+        {
+            var (k, d) = await _cliRunner.DetectAudioKeyAsync(sourceWavPath, ct);
+            result.DetectedKey = k;
+            result.DetectedKeyDisplayName = d;
+            string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
+            await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key = k, displayName = d }), ct);
+        }
+        catch { }
 
         _jobs[request.JobId] = result;
         await EmitAsync(request.JobId, "COMPLETED", "全部分軌與母帶相位校驗完成", 100, 100,

@@ -46,7 +46,6 @@ class StemForgeDawApp {
     this.localPathInput = document.getElementById("localPathInput");
 
     this.btnStartSeparate = document.getElementById("btnStartSeparate");
-    this.btnRunDemo = document.getElementById("btnRunDemo");
     this.modeSelect = document.getElementById("separationModeSelect");
     this.dagTreeContainer = document.getElementById("dagTreeContainer");
     this.selectedCountBadge = document.getElementById("selectedCountBadge");
@@ -76,6 +75,50 @@ class StemForgeDawApp {
     this.btnCloseHistory = document.getElementById("btnCloseHistory");
     this.historyListContainer = document.getElementById("historyListContainer");
     this.checkedNodeIds = new Set();
+
+    // AI 神經變調控制元件 (原調偵測 + ±6半音升降桿 + 點擊開始做 + 一鍵恢復)
+    this.detectedKeyBadge = document.getElementById("detectedKeyBadge");
+    this.targetKeyBadge = document.getElementById("targetKeyBadge");
+    this.pitchShiftSlider = document.getElementById("pitchShiftSlider");
+    this.btnPitchDown = document.getElementById("btnPitchDown");
+    this.btnPitchUp = document.getElementById("btnPitchUp");
+    this.pitchValueLabel = document.getElementById("pitchValueLabel");
+    this.btnApplyPitch = document.getElementById("btnApplyPitch");
+    this.btnResetPitch = document.getElementById("btnResetPitch");
+
+    // 處理中半透明變暗遮罩元件 (Busy Overlay)
+    this.busyOverlay = document.getElementById("mixerBusyOverlay");
+    this.busyTitle = document.getElementById("busyOverlayTitle");
+    this.busySub = document.getElementById("busyOverlaySub");
+    this.busyIcon = document.getElementById("busySpinnerIcon");
+    this.busyFill = document.getElementById("busyOverlayFill");
+    this.busyPct = document.getElementById("busyOverlayPct");
+
+    if (this.pitchShiftSlider) {
+      // 拉動時純更新數值與目標調性文字，不觸發耗時神經運算
+      this.pitchShiftSlider.addEventListener("input", (e) => this.updatePitchUiOnly(parseInt(e.target.value, 10)));
+      this.pitchShiftSlider.addEventListener("change", (e) => this.updatePitchUiOnly(parseInt(e.target.value, 10)));
+    }
+    if (this.btnPitchDown) {
+      this.btnPitchDown.addEventListener("click", () => this.stepPitchUi(-1));
+    }
+    if (this.btnPitchUp) {
+      this.btnPitchUp.addEventListener("click", () => this.stepPitchUi(1));
+    }
+    if (this.btnApplyPitch) {
+      // 點「⚡ 套用變調」才正式向後端送出開始變調！
+      this.btnApplyPitch.addEventListener("click", () => {
+        const val = parseInt(this.pitchShiftSlider.value, 10) || 0;
+        this.applyPitchShift(val);
+      });
+    }
+    if (this.btnResetPitch) {
+      this.btnResetPitch.addEventListener("click", () => {
+        if (this.pitchShiftSlider) this.pitchShiftSlider.value = 0;
+        this.updatePitchUiOnly(0);
+        this.applyPitchShift(0);
+      });
+    }
 
     if (this.btnExportSelectedZip) {
       this.btnExportSelectedZip.addEventListener("click", () => this.exportSelectedZip());
@@ -153,9 +196,8 @@ class StemForgeDawApp {
     });
     this.renderPromptChips();
 
-    // Start Separation & Demo
+    // Start Separation
     this.btnStartSeparate.addEventListener("click", () => this.startSeparationJob());
-    this.btnRunDemo.addEventListener("click", () => this.runStudioDemoJob());
 
     // Instant Mode Switch
     this.modeSelect.addEventListener("change", () => {
@@ -201,9 +243,34 @@ class StemForgeDawApp {
       if (ev.vramTotalMb > 0) {
         document.getElementById("vramUsageText").textContent = `${ev.vramUsedMb} / ${ev.vramTotalMb} MB`;
       }
+      this.updateBusyOverlayProgress(ev.overallPercent, ev.stageTitle, ev.message);
     });
 
     this.hubConnection.start().catch((err) => console.warn("SignalR:", err));
+  }
+
+  showBusyOverlay(title, sub, pct = 0, icon = "⚡") {
+    if (!this.busyOverlay) return;
+    if (this.busyTitle && title) this.busyTitle.textContent = title;
+    if (this.busySub && sub) this.busySub.textContent = sub;
+    if (this.busyIcon && icon) this.busyIcon.textContent = icon;
+    this.updateBusyOverlayProgress(pct);
+    this.busyOverlay.classList.add("active");
+  }
+
+  updateBusyOverlayProgress(pct, title, sub) {
+    if (typeof pct === "number") {
+      const clamped = Math.max(0, Math.min(100, pct));
+      if (this.busyFill) this.busyFill.style.width = `${clamped}%`;
+      if (this.busyPct) this.busyPct.textContent = `${clamped.toFixed(clamped % 1 === 0 ? 0 : 1)}%`;
+    }
+    if (title && this.busyTitle) this.busyTitle.textContent = title;
+    if (sub && this.busySub) this.busySub.textContent = sub;
+  }
+
+  hideBusyOverlay() {
+    if (!this.busyOverlay) return;
+    this.busyOverlay.classList.remove("active");
   }
 
   async loadSystemStatus() {
@@ -383,13 +450,13 @@ class StemForgeDawApp {
   async startSeparationJob() {
     const localPath = this.localPathInput.value.trim();
     if (!this.selectedFile && !localPath) {
-      alert("請先選擇 MP3/WAV/FLAC 或 MP4 影片檔案，或貼上本機檔案路徑，或點「⚡ 載入測試曲」！");
+      alert("請先選擇 MP3/WAV/FLAC 或 MP4 影片檔案，或貼上本機檔案路徑！");
       return;
     }
 
     this.stopPlayback();
     this.btnStartSeparate.disabled = true;
-    this.btnRunDemo.disabled = true;
+    this.showBusyOverlay("⚡ AI 深度神經分軌中...", "RTX 4050 級聯模型分離運算中...", 0, "🎛️");
 
     const formData = new FormData();
     if (this.selectedFile) formData.append("file", this.selectedFile);
@@ -407,26 +474,9 @@ class StemForgeDawApp {
       await this.loadJobIntoMixer(data);
     } catch (err) {
       alert(err.message);
+      this.hideBusyOverlay();
     } finally {
       this.btnStartSeparate.disabled = false;
-      this.btnRunDemo.disabled = false;
-    }
-  }
-
-  async runStudioDemoJob() {
-    this.stopPlayback();
-    this.btnStartSeparate.disabled = true;
-    this.btnRunDemo.disabled = true;
-
-    try {
-      const res = await fetch("/api/jobs/demo", { method: "POST" });
-      const data = await res.json();
-      await this.loadJobIntoMixer(data);
-    } catch (err) {
-      alert("測試曲執行失敗: " + err.message);
-    } finally {
-      this.btnStartSeparate.disabled = false;
-      this.btnRunDemo.disabled = false;
     }
   }
 
@@ -466,9 +516,29 @@ class StemForgeDawApp {
       sessionStorage.setItem("stemforge_last_job", JSON.stringify(jobResult));
     } catch {}
     this.ensureAudioContext();
+    this.showBusyOverlay(
+      "📂 正在載入音軌至混音台...",
+      `正在並行解碼 ${jobResult.stems.length} 條 32-bit Float 音訊緩衝區...`,
+      25,
+      "🎚️"
+    );
 
     document.getElementById("nullCancellationBadge").textContent =
       `Null 誤差: ${jobResult.nullTestCancellationDbFs} dBFS`;
+
+    const detectedKeyDisplay = jobResult.detectedKeyDisplayName || jobResult.detectedKey || "C 大調 (C Major)";
+    if (this.detectedKeyBadge) {
+      this.detectedKeyBadge.textContent = `原調: ${detectedKeyDisplay}`;
+    }
+    if (this.pitchShiftSlider) {
+      this.pitchShiftSlider.value = 0;
+    }
+    if (this.pitchValueLabel) {
+      this.pitchValueLabel.textContent = "0 半音";
+    }
+    if (this.targetKeyBadge) {
+      this.targetKeyBadge.textContent = "目標: 原調 (0)";
+    }
 
     if (jobResult.reaperRppUrl) {
       this.btnDownloadRpp.href = jobResult.reaperRppUrl;
@@ -533,7 +603,8 @@ class StemForgeDawApp {
       for (const t of this.tracks) {
         this.drawWaveform(t);
       }
-    }, 30);
+      this.hideBusyOverlay();
+    }, 50);
 
     this.pauseOffsetSec = 0;
     this.btnPlayPause.disabled = false;
@@ -915,6 +986,13 @@ class StemForgeDawApp {
       targetBtn.textContent = isMp3 ? "⏳ MP3 轉碼中..." : "⏳ WAV 混音中...";
     }
 
+    this.showBusyOverlay(
+      isMp3 ? "🎵 正在合併匯出 MP3..." : "🎚️ 正在合併匯出 WAV...",
+      `正在將已選取的 ${this.checkedNodeIds.size} 條音軌進行 32-bit Float 數位總線混音與編碼...`,
+      45,
+      "🎚️"
+    );
+
     try {
       const payload = {
         selectedNodes: Array.from(this.checkedNodeIds),
@@ -938,6 +1016,7 @@ class StemForgeDawApp {
     } catch (err) {
       alert(`合併匯出失敗: ${err.message}`);
     } finally {
+      this.hideBusyOverlay();
       if (targetBtn) {
         targetBtn.disabled = false;
         targetBtn.innerHTML = origHtml;
@@ -950,6 +1029,7 @@ class StemForgeDawApp {
     if (!this.currentJob) return;
     this.btnExportZip.disabled = true;
     this.btnExportZip.textContent = "⏳ 打包中...";
+    this.showBusyOverlay("📦 正在打包全套分軌 ZIP...", "正在封裝 32-bit Float WAV + Reaper (.rpp) 工程檔...", 50, "📦");
     try {
       const r = await fetch(`/api/jobs/${this.currentJob.jobId}/export-zip`, { method: "POST" });
       const d = await r.json();
@@ -960,6 +1040,7 @@ class StemForgeDawApp {
         a.click();
       }
     } finally {
+      this.hideBusyOverlay();
       this.btnExportZip.disabled = false;
       this.btnExportZip.textContent = "📦 打包全軌 ZIP";
     }
@@ -969,6 +1050,7 @@ class StemForgeDawApp {
     if (!this.currentJob || this.checkedNodeIds.size === 0) return;
     this.btnExportSelectedZip.disabled = true;
     this.btnExportSelectedZip.textContent = `⏳ 正在打包 ${this.checkedNodeIds.size} 軌...`;
+    this.showBusyOverlay("📥 正在打包選取分軌 ZIP...", `正在封裝 ${this.checkedNodeIds.size} 條音軌與 Reaper 工程檔...`, 50, "📥");
     try {
       const payload = { selectedNodes: Array.from(this.checkedNodeIds) };
       const r = await fetch(`/api/jobs/${this.currentJob.jobId}/export-zip`, {
@@ -984,6 +1066,7 @@ class StemForgeDawApp {
         a.click();
       }
     } finally {
+      this.hideBusyOverlay();
       this.btnExportSelectedZip.disabled = false;
       this.updateCheckedTracksCount();
     }
@@ -1042,6 +1125,123 @@ class StemForgeDawApp {
       await this.loadJobIntoMixer(job);
     } catch (err) {
       alert("載入歷史專案失敗: " + err.message);
+    }
+  }
+
+  stepPitchUi(delta) {
+    if (!this.pitchShiftSlider) return;
+    const cur = parseInt(this.pitchShiftSlider.value, 10) || 0;
+    const next = Math.max(-6, Math.min(6, cur + delta));
+    if (next !== cur) {
+      this.pitchShiftSlider.value = next;
+      this.updatePitchUiOnly(next);
+    }
+  }
+
+  updatePitchUiOnly(val) {
+    if (this.pitchValueLabel) {
+      this.pitchValueLabel.textContent = val === 0 ? "0 半音" : `${val > 0 ? "+" + val : val} 半音`;
+    }
+    if (this.targetKeyBadge && this.currentJob) {
+      const orig = this.currentJob.detectedKey || "C Major";
+      this.targetKeyBadge.textContent = val === 0 ? "目標: 原調 (0)" : `目標: ${this.calcTransposedKey(orig, val)}`;
+    }
+  }
+
+  calcTransposedKey(origKey, semitones) {
+    const pitches = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const zhPitches = ["C", "C# / Db", "D", "D# / Eb", "E", "F", "F# / Gb", "G", "G# / Ab", "A", "A# / Bb", "B"];
+    const parts = origKey.split(" ");
+    if (parts.length < 2) return origKey;
+    const root = parts[0];
+    const mode = parts[1];
+    const idx = pitches.findIndex((p) => p.toLowerCase() === root.toLowerCase());
+    if (idx < 0) return origKey;
+    let newIdx = (idx + semitones) % 12;
+    if (newIdx < 0) newIdx += 12;
+    const modeZh = mode.toLowerCase() === "minor" ? "小調" : "大調";
+    const sign = semitones > 0 ? `+${semitones}` : `${semitones}`;
+    return `${zhPitches[newIdx]} ${modeZh} [${sign}]`;
+  }
+
+  async applyPitchShift(semitones) {
+    if (!this.currentJob) return;
+    semitones = Math.max(-6, Math.min(6, semitones));
+    if (this.pitchShiftSlider) this.pitchShiftSlider.value = semitones;
+    this.updatePitchUiOnly(semitones);
+
+    const wasPlaying = this.isPlaying;
+    const curPos = this.getCurrentTimeSec();
+    this.pausePlayback();
+
+    const bannerStage = document.getElementById("progressStageTag");
+    const bannerTitle = document.getElementById("progressTitleText");
+    const bannerSub = document.getElementById("progressSubText");
+    const signText = semitones > 0 ? `+${semitones}` : `${semitones}`;
+
+    if (bannerStage) bannerStage.textContent = "PITCH SHIFT";
+    if (bannerTitle) bannerTitle.textContent = `[Phase-Vocoder] 正在執行多軌神經變調 (${signText} 半音)...`;
+    if (bannerSub) bannerSub.textContent = "鼓組自動繞過保留衝擊力，人聲鎖定共振峰，伴奏和弦高保真變調";
+
+    if (this.btnApplyPitch) {
+      this.btnApplyPitch.disabled = true;
+      this.btnApplyPitch.textContent = "⏳ 變調中...";
+    }
+
+    const overlayTitle = semitones === 0 ? "⟲ 正在恢復原調..." : `⚡ 正在進行多軌音訊變調 (${signText} 半音)...`;
+    const overlaySub = semitones === 0
+      ? "正在重新載入與解碼原始音訊軌道..."
+      : "鼓組原音保留衝擊力，人聲與樂器 Phase-Vocoder 高保真變調中...";
+
+    this.showBusyOverlay(overlayTitle, overlaySub, 5, "🎵");
+
+    try {
+      const res = await fetch(`/api/jobs/${this.currentJob.jobId}/pitch-shift`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ semitones })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "變調失敗");
+
+      this.updateBusyOverlayProgress(90, "正在更新混音台音訊...", "載入最新音軌緩衝區並重新繪製波形...");
+
+      if (this.targetKeyBadge) {
+        this.targetKeyBadge.textContent = semitones === 0 ? "目標: 原調 (0)" : `目標: ${data.targetKey}`;
+      }
+
+      // 平行重新解碼變調後的各軌音訊並更新下載連結
+      await Promise.all(
+        data.stems.map(async (stem) => {
+          const track = this.tracks.find((t) => t.nodeId === stem.nodeId);
+          if (track) {
+            track.meta.relativeUrl = stem.relativeUrl;
+            const link = track.rowEl?.querySelector("a.act-link");
+            if (link) link.href = stem.relativeUrl;
+            const r = await fetch(`${stem.relativeUrl}?t=${Date.now()}`);
+            const buf = await r.arrayBuffer();
+            track.audioBuffer = await this.audioCtx.decodeAudioData(buf);
+            this.drawWaveform(track);
+          }
+        })
+      );
+
+      if (bannerStage) bannerStage.textContent = "READY";
+      if (bannerTitle) bannerTitle.textContent = `神經變調完成！當前調性: ${data.targetKey}`;
+      if (bannerSub) bannerSub.textContent = "可隨時拉動升降桿或點擊「⟲ 恢復原調」即時切換";
+
+      this.pauseOffsetSec = curPos;
+      if (wasPlaying) {
+        this.startPlayback();
+      }
+    } catch (err) {
+      alert(`變調失敗: ${err.message}`);
+    } finally {
+      this.hideBusyOverlay();
+      if (this.btnApplyPitch) {
+        this.btnApplyPitch.disabled = false;
+        this.btnApplyPitch.textContent = "⚡ 套用變調";
+      }
     }
   }
 

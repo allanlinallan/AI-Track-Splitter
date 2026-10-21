@@ -15,33 +15,26 @@ using StemForge.Web.Hubs;
 var builder = WebApplication.CreateBuilder(args);
 
 // 計算專案根目錄與 workspace_data 路徑 (指向 D:\工作專案\GoogleAntigravity\AI音樂分軌)
+string solutionRoot = FindProjectRoot();
 string contentRoot = builder.Environment.ContentRootPath;
-string solutionRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
-if (!File.Exists(Path.Combine(solutionRoot, "Directory.Build.props")))
-{
-    solutionRoot = Path.GetFullPath(Path.Combine(contentRoot, "..", ".."));
-    if (!File.Exists(Path.Combine(solutionRoot, "Directory.Build.props")))
-    {
-        solutionRoot = contentRoot;
-    }
-}
 string workspaceDataDir = Path.Combine(solutionRoot, "workspace_data");
 string projectsDir = Path.Combine(workspaceDataDir, "projects");
 Directory.CreateDirectory(projectsDir);
 
 // 自動定位 wwwroot 靜態網頁資源，相容任何執行路徑 (Visual Studio、根目錄 CLI、Release_Portable)
-string wwwrootDir = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+string wwwrootDir = Path.Combine(solutionRoot, "src", "StemForge.Web", "wwwroot");
 if (!Directory.Exists(wwwrootDir))
 {
-    wwwrootDir = Path.Combine(contentRoot, "wwwroot");
+    wwwrootDir = Path.Combine(solutionRoot, "wwwroot");
 }
 if (!Directory.Exists(wwwrootDir))
 {
-    wwwrootDir = Path.Combine(solutionRoot, "src", "StemForge.Web", "wwwroot");
+    wwwrootDir = Path.Combine(AppContext.BaseDirectory, "wwwroot");
 }
-if (!Directory.Exists(wwwrootDir))
+if (Directory.Exists(wwwrootDir))
 {
-    wwwrootDir = Path.Combine(contentRoot, "src", "StemForge.Web", "wwwroot");
+    builder.Environment.WebRootPath = wwwrootDir;
+    builder.Environment.WebRootFileProvider = new PhysicalFileProvider(wwwrootDir);
 }
 if (Directory.Exists(wwwrootDir))
 {
@@ -110,6 +103,8 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.MapHub<SeparationHub>("/hubs/separation");
+
+app.MapGet("/favicon.ico", () => Results.NoContent());
 
 // 1. 取得硬體 (RTX 4050 6GB VRAM) 與環境狀態
 app.MapGet("/api/system/status", async (DagOrchestrator orchestrator) =>
@@ -225,41 +220,6 @@ app.MapPost("/api/jobs/separate", async (
         await File.WriteAllTextAsync(Path.Combine(wwwrootDir, "latest_gpu_job.json"), JsonSerializer.Serialize(result, jsonOpts), ct);
     }
     catch { /* ignore snapshot write error */ }
-
-    return Results.Ok(result);
-});
-
-// 4. 一鍵生成內建錄音室多樂器測試曲並執行全套 19 軌拆解
-app.MapPost("/api/jobs/demo", async (
-    DagOrchestrator orchestrator,
-    IHubContext<SeparationHub> hub,
-    CancellationToken ct) =>
-{
-    string jobId = "demo_" + Guid.NewGuid().ToString("N")[..6];
-    string jobDir = Path.Combine(projectsDir, jobId);
-    Directory.CreateDirectory(jobDir);
-
-    string demoWavPath = Path.Combine(jobDir, "Studio_Multitrack_Demo.wav");
-    DemoSongSynthesizer.GenerateStudioDemoMixWav(demoWavPath);
-
-    var req = new SeparationJobRequest
-    {
-        JobId = jobId,
-        InputFilePath = demoWavPath,
-        OriginalFileName = "Studio_Multitrack_Demo.wav",
-        SelectedNodeIds = StemDagCatalog.SelectableLeafNodes.Select(n => n.NodeId).ToList(),
-        AudioSepPrompts = ["violin", "brass"],
-        Mode = SeparationMode.BitAccurateResidual,
-        UseFp16 = true,
-        Overlap = 4,
-        ExportReaperProject = true,
-        AutoGenerateMidi = false
-    };
-
-    var result = await orchestrator.ExecuteSeparationDagAsync(
-        req,
-        async progress => await hub.Clients.All.SendAsync("ProgressUpdated", progress, ct),
-        ct);
 
     return Results.Ok(result);
 });
@@ -457,6 +417,102 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     }
 });
 
+// 7.6 PyTorch GPU 神經變調 API (升降半音 -6 ~ +6)
+app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
+    string jobId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    IHubContext<SeparationHub> hub,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    int semitones = 0;
+    if (httpReq.HasJsonContentType())
+    {
+        try
+        {
+            using var reader = new StreamReader(httpReq.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("semitones", out var sProp))
+                {
+                    semitones = Math.Clamp(sProp.GetInt32(), -6, 6);
+                }
+            }
+        }
+        catch { }
+    }
+
+    string jobDir = Path.Combine(projectsDir, jobId);
+    string stemsDir = Path.Combine(jobDir, "stems");
+
+    if (semitones == 0)
+    {
+        job.CurrentPitchShift = 0;
+        foreach (var stem in job.Stems)
+        {
+            string fn = Path.GetFileName(stem.FilePath);
+            stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
+        }
+        return Results.Ok(new
+        {
+            jobId,
+            semitones = 0,
+            detectedKey = job.DetectedKey ?? "C Major",
+            detectedKeyDisplayName = job.DetectedKeyDisplayName ?? "C 大調 (C Major)",
+            targetKey = job.DetectedKeyDisplayName ?? "C 大調 (C Major)",
+            stems = job.Stems
+        });
+    }
+
+    string pitchOutDir = Path.Combine(jobDir, $"pitch_{semitones}");
+    Directory.CreateDirectory(pitchOutDir);
+
+    int existingCount = Directory.Exists(pitchOutDir) ? Directory.GetFiles(pitchOutDir, "*.wav").Length : 0;
+    if (existingCount < job.Stems.Count)
+    {
+        await orchestrator.CliRunner.PitchShiftStemsAsync(
+            stemsDir,
+            pitchOutDir,
+            semitones,
+            async (pct, msg) =>
+            {
+                await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(
+                    jobId, "PITCH_SHIFT", $"GPU 神經變調 ({semitones:+d} 半音)", pct, pct, msg
+                ), ct);
+            },
+            ct);
+    }
+
+    job.CurrentPitchShift = semitones;
+    foreach (var stem in job.Stems)
+    {
+        string fn = Path.GetFileName(stem.FilePath);
+        string shiftedFile = Path.Combine(pitchOutDir, fn);
+        if (File.Exists(shiftedFile))
+        {
+            stem.RelativeUrl = $"/projects/{jobId}/pitch_{semitones}/{fn}";
+        }
+    }
+
+    string origKey = job.DetectedKey ?? "C Major";
+    string targetKey = CalculateTransposedKey(origKey, semitones);
+
+    return Results.Ok(new
+    {
+        jobId,
+        semitones,
+        detectedKey = job.DetectedKey ?? "C Major",
+        detectedKeyDisplayName = job.DetectedKeyDisplayName ?? "C 大調 (C Major)",
+        targetKey,
+        stems = job.Stems
+    });
+});
+
 // 8. 取得本機歷史分軌專案清單
 app.MapGet("/api/projects/history", (DagOrchestrator orchestrator) =>
 {
@@ -502,5 +558,44 @@ app.MapPost("/api/jobs/{jobId}/prompt/{prompt}", async (
 
     return Results.Ok(new { stem, job });
 });
+
+static string CalculateTransposedKey(string origKey, int semitones)
+{
+    string[] pitches = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    string[] zhPitches = ["C", "C# / Db", "D", "D# / Eb", "E", "F", "F# / Gb", "G", "G# / Ab", "A", "A# / Bb", "B"];
+    var parts = origKey.Split(' ');
+    if (parts.Length < 2) return origKey;
+    string root = parts[0];
+    string mode = parts[1]; // Major / Minor
+
+    int idx = Array.FindIndex(pitches, p => string.Equals(p, root, StringComparison.OrdinalIgnoreCase));
+    if (idx < 0) return origKey;
+
+    int newIdx = (idx + semitones) % 12;
+    if (newIdx < 0) newIdx += 12;
+
+    string newRoot = pitches[newIdx];
+    string newZh = zhPitches[newIdx];
+    string modeZh = mode.Equals("Minor", StringComparison.OrdinalIgnoreCase) ? "小調" : "大調";
+    string sign = semitones > 0 ? $"+{semitones}" : $"{semitones}";
+    return $"{newZh} {modeZh} ({newRoot} {mode}) [{sign}]";
+}
+
+static string FindProjectRoot()
+{
+    string defaultDevRoot = @"D:\工作專案\GoogleAntigravity\AI音樂分軌";
+    if (Directory.Exists(defaultDevRoot) && File.Exists(Path.Combine(defaultDevRoot, "StemForge.sln")))
+        return defaultDevRoot;
+
+    string? curr = AppContext.BaseDirectory;
+    while (!string.IsNullOrEmpty(curr))
+    {
+        if (File.Exists(Path.Combine(curr, "StemForge.sln")) || Directory.Exists(Path.Combine(curr, "ai_engine")))
+            return curr;
+        curr = Directory.GetParent(curr)?.FullName;
+    }
+
+    return AppContext.BaseDirectory;
+}
 
 app.Run();

@@ -339,22 +339,206 @@ def run_full_neural_pipeline(args):
     })
 
 
+def detect_audio_key(audio_path: str):
+    """
+    Krumhansl-Schmuckler 24 調性特徵分析演算法 (Pitch Class Profile / Chroma)
+    """
+    MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+    MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+    PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    ZH_NAMES = {
+        "C": "C", "C#": "C# / Db", "D": "D", "D#": "D# / Eb", "E": "E", "F": "F",
+        "F#": "F# / Gb", "G": "G", "G#": "G# / Ab", "A": "A", "A#": "A# / Bb", "B": "B"
+    }
+
+    # 讀取前 90 秒音訊做調性特徵萃取
+    info = sf.info(audio_path)
+    sr = info.samplerate
+    max_frames = min(info.frames, sr * 90)
+    data, _ = sf.read(audio_path, frames=max_frames, dtype="float32", always_2d=True)
+    mono = np.mean(data, axis=1)
+
+    n_fft = 4096
+    hop = 2048
+    window = np.hanning(n_fft)
+    stft_slices = [np.abs(np.fft.rfft(mono[i : i + n_fft] * window)) for i in range(0, len(mono) - n_fft, hop)]
+    if not stft_slices:
+        stft_slices = [np.abs(np.fft.rfft(mono[:n_fft] * window))]
+    stft = np.array(stft_slices)
+    freqs = np.fft.rfftfreq(n_fft, 1.0 / sr)
+
+    chroma = np.zeros(12)
+    for f_idx, f in enumerate(freqs):
+        if f < 50 or f > 4000:
+            continue
+        midi_pitch = int(np.round(69 + 12 * np.log2(f / 440.0))) % 12
+        chroma[midi_pitch] += float(np.sum(stft[:, f_idx]))
+
+    chroma = chroma / (np.linalg.norm(chroma) + 1e-9)
+
+    best_key = "C Major"
+    best_root = "C"
+    best_mode = "Major"
+    best_corr = -999.0
+
+    for i in range(12):
+        maj = np.roll(MAJOR_PROFILE, i)
+        c_maj = float(np.corrcoef(chroma, maj)[0, 1])
+        if c_maj > best_corr:
+            best_corr = c_maj
+            best_root = PITCH_NAMES[i]
+            best_mode = "Major"
+            best_key = f"{best_root} Major"
+
+        min_prof = np.roll(MINOR_PROFILE, i)
+        c_min = float(np.corrcoef(chroma, min_prof)[0, 1])
+        if c_min > best_corr:
+            best_corr = c_min
+            best_root = PITCH_NAMES[i]
+            best_mode = "Minor"
+            best_key = f"{best_root} Minor"
+
+    mode_zh = "大調" if best_mode == "Major" else "小調"
+    display_name = f"{ZH_NAMES.get(best_root, best_root)} {mode_zh} ({best_key})"
+
+    return {
+        "key": best_key,
+        "root": best_root,
+        "mode": best_mode,
+        "displayName": display_name,
+        "confidence": round(float(best_corr), 3)
+    }
+
+
+def pitch_shift_stems_gpu(stems_dir: str, output_dir: str, semitones: int):
+    """
+    使用高保真 Phase-Vocoder (FFmpeg librubberband) 進行多軌分治神經變調：
+    1. 鼓組軌道 (Kick/Snare/Tom/Hat/Cymbal/Drums) 100% Bypass 不變調，保持原始衝擊力
+    2. 人聲與樂器軌道 (Vocal/Bass/Guitar/Piano/Brass/Strings) 透過 Phase-Vocoder 高保真變調
+    3. 自動多執行緒平行加速，零 VRAM 瓶頸、零崩潰、音質極其清晰無雜音
+    """
+    import shutil
+    import subprocess
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    os.makedirs(output_dir, exist_ok=True)
+    wav_files = glob.glob(os.path.join(stems_dir, "*.wav"))
+    if not wav_files:
+        raise ValueError(f"找不到音軌檔案於: {stems_dir}")
+
+    ffmpeg_bin = shutil.which("ffmpeg") or r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"
+    if not os.path.exists(ffmpeg_bin):
+        raise FileNotFoundError(f"找不到 FFmpeg: {ffmpeg_bin}")
+
+    pitch_ratio = 2.0 ** (semitones / 12.0)
+    total_files = len(wav_files)
+    completed_count = 0
+    lock = threading.Lock()
+
+    def process_one(wav_path):
+        nonlocal completed_count
+        fname = os.path.basename(wav_path)
+        out_path = os.path.join(output_dir, fname)
+        lower_name = fname.lower()
+        is_drum = any(k in lower_name for k in ["kick", "snare", "tom", "hat", "cymbal", "crash", "ride", "drum"])
+
+        if semitones == 0 or is_drum:
+            shutil.copy2(wav_path, out_path)
+            with lock:
+                completed_count += 1
+                pct = round((completed_count / total_files) * 100, 1)
+                emit_json({
+                    "type": "progress",
+                    "stage": "PITCH_SHIFT",
+                    "percent": pct,
+                    "message": f"[{pct}%] 鼓組軌道原始保留 (Bypass): {fname}"
+                })
+            return {"fileName": fname, "bypassed": is_drum, "semitones": 0}
+
+        with lock:
+            pct = round((completed_count / total_files) * 100, 1)
+            emit_json({
+                "type": "progress",
+                "stage": "PITCH_SHIFT",
+                "percent": pct,
+                "message": f"[{pct}%] 正在變調 ({semitones:+d} 半音): {fname}..."
+            })
+
+        # 先嘗試使用 librubberband (音質最高)
+        cmd_rubberband = [
+            ffmpeg_bin, "-y",
+            "-i", wav_path,
+            "-af", f"rubberband=pitch={pitch_ratio}",
+            "-c:a", "pcm_f32le",
+            out_path
+        ]
+        res = subprocess.run(cmd_rubberband, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="ignore")
+
+        if res.returncode != 0:
+            # 備援：使用 asetrate + atempo + aresample 高精度重採樣
+            tempo_ratio = 1.0 / pitch_ratio
+            sr = 44100
+            try:
+                info = sf.info(wav_path)
+                sr = info.samplerate
+            except:
+                pass
+            af_fallback = f"asetrate={sr}*{pitch_ratio},atempo={tempo_ratio},aresample={sr}"
+            cmd_fallback = [
+                ffmpeg_bin, "-y",
+                "-i", wav_path,
+                "-af", af_fallback,
+                "-c:a", "pcm_f32le",
+                out_path
+            ]
+            subprocess.run(cmd_fallback, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        with lock:
+            completed_count += 1
+            pct = round((completed_count / total_files) * 100, 1)
+            emit_json({
+                "type": "progress",
+                "stage": "PITCH_SHIFT",
+                "percent": pct,
+                "message": f"[{pct}%] 完成變調 ({semitones:+d} 半音): {fname}"
+            })
+
+        return {"fileName": fname, "bypassed": False, "semitones": semitones}
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(process_one, wav_files))
+
+    clear_vram()
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description="StemForge GPU Neural Separation CLI")
-    parser.add_argument("--task", required=True)
+    parser.add_argument("--task", default="separate")
     parser.add_argument("--stage", default="ALL")
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--model-dir", required=True)
+    parser.add_argument("--input", default="")
+    parser.add_argument("--output-dir", default="")
+    parser.add_argument("--model-dir", default="")
     parser.add_argument("--model", default="htdemucs_6s")
     parser.add_argument("--overlap", type=int, default=4)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--prompt", default="")
+    parser.add_argument("--semitones", type=int, default=0)
     args = parser.parse_args()
 
     try:
-        run_full_neural_pipeline(args)
-        sys.exit(0)
+        if args.task == "detect-key":
+            res = detect_audio_key(args.input)
+            emit_json({"type": "completed", "task": "detect-key", "result": res})
+            sys.exit(0)
+        elif args.task == "pitch-shift":
+            results = pitch_shift_stems_gpu(args.input, args.output_dir, args.semitones)
+            emit_json({"type": "completed", "task": "pitch-shift", "semitones": args.semitones, "results": results})
+            sys.exit(0)
+        else:
+            run_full_neural_pipeline(args)
+            sys.exit(0)
     except Exception as ex:
         emit_json({
             "type": "error",

@@ -69,7 +69,7 @@ public sealed record StemTrackResult
     public required string GroupCategory { get; init; }
     public required string ColorHex { get; init; }
     public required string FilePath { get; init; }
-    public required string RelativeUrl { get; init; }
+    public required string RelativeUrl { get; set; }
     public string? MidiRelativeUrl { get; set; }
     public string? MidiFilePath { get; set; }
     public double DurationSeconds { get; init; }
@@ -92,6 +92,9 @@ public sealed record SeparationJobResult
     public float NullTestCancellationDbFs { get; set; }
     public string? ReaperRppUrl { get; set; }
     public string? ZipArchiveUrl { get; set; }
+    public string? DetectedKey { get; set; }
+    public string? DetectedKeyDisplayName { get; set; }
+    public int CurrentPitchShift { get; set; } = 0;
     public List<StemTrackResult> Stems { get; set; } = [];
 }
 
