@@ -1138,6 +1138,13 @@ body {
   color: #94a3b8;
 }
 
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .btn-load-item {
   background: #2563eb;
   border: none;
@@ -1148,10 +1155,31 @@ body {
   font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
+  transition: all 0.15s;
 }
 
 .btn-load-item:hover {
   background: #1d4ed8;
+}
+
+.btn-delete-item {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.btn-delete-item:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #ef4444;
+  color: white;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
 }
 
 .act-link {

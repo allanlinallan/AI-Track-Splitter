@@ -39,6 +39,25 @@ public sealed class DagOrchestrator
 
     public IReadOnlyCollection<SeparationJobResult> GetAllJobs() => _jobs.Values.ToList();
 
+    public bool DeleteProject(string jobId)
+    {
+        _jobs.TryRemove(jobId, out _);
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        if (Directory.Exists(jobDir))
+        {
+            try
+            {
+                Directory.Delete(jobDir, recursive: true);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
     public IReadOnlyList<HistoryProjectSummary> GetHistoryProjects()
     {
         var list = new List<HistoryProjectSummary>();

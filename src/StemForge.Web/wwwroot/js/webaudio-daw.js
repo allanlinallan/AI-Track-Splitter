@@ -1095,12 +1095,46 @@ class StemForgeDawApp {
             <div class="history-item-name" title="${item.originalFileName}">🎵 ${item.originalFileName}</div>
             <div class="history-item-meta">時間: ${dateStr} | 共 ${item.stemCount} 條已分離音軌</div>
           </div>
-          <button class="btn-load-item" data-id="${item.jobId}">⚡ 載入混音台</button>
+          <div class="history-item-actions">
+            <button class="btn-load-item" data-id="${item.jobId}">⚡ 載入混音台</button>
+            <button class="btn-delete-item" data-id="${item.jobId}" title="刪除此歷史專案與所有分軌檔案">🗑️ 刪除</button>
+          </div>
         `;
 
         row.querySelector(".btn-load-item").addEventListener("click", async () => {
           this.closeHistoryModal();
           await this.loadHistoryProject(item.jobId);
+        });
+
+        row.querySelector(".btn-delete-item").addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const confirmed = confirm(`確定要徹底刪除專案【${item.originalFileName}】嗎？\n此操作將永久清除該專案所有已分離的音軌檔案。`);
+          if (!confirmed) return;
+
+          const btnDel = row.querySelector(".btn-delete-item");
+          btnDel.disabled = true;
+          btnDel.textContent = "⏳...";
+
+          try {
+            const delRes = await fetch(`/api/projects/${item.jobId}`, { method: "DELETE" });
+            if (!delRes.ok) {
+              const errData = await delRes.json();
+              throw new Error(errData.error || "刪除失敗");
+            }
+            row.style.transition = "all 0.3s ease";
+            row.style.opacity = "0";
+            row.style.transform = "translateX(30px)";
+            setTimeout(() => {
+              row.remove();
+              if (this.historyListContainer.querySelectorAll(".history-item").length === 0) {
+                this.historyListContainer.innerHTML = `<div class="empty-history-text" style="padding: 20px; text-align: center; color: #94a3b8;">目前尚未有任何已分軌的歷史專案</div>`;
+              }
+            }, 300);
+          } catch (err) {
+            alert("刪除專案失敗: " + err.message);
+            btnDel.disabled = false;
+            btnDel.textContent = "🗑️ 刪除";
+          }
         });
 
         this.historyListContainer.appendChild(row);

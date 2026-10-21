@@ -1,14 +1,17 @@
 param(
     [switch]$IncludeModels = $true,
-    [switch]$CreateZip = $false
+    [switch]$CreateZip = $true,
+    [string]$Version = "1.0.4"
 )
 
 $ErrorActionPreference = "Stop"
 $RootDir = $PSScriptRoot
 $OutDir  = Join-Path $RootDir "Release_Portable"
+$ZipName = "StemForge_v$($Version)_Portable_Win64.zip"
+$ZipPath = Join-Path $RootDir $ZipName
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  StemForge Studio - Win-x64 Portable Release Builder" -ForegroundColor Cyan
+Write-Host "  StemForge Studio v$Version - Win-x64 Portable Release Builder" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 if (Test-Path $OutDir) {
@@ -36,20 +39,7 @@ $ProjectsOutDir = Join-Path $OutDir "workspace_data\projects"
 $ModelsOutDir   = Join-Path $OutDir "workspace_data\models"
 New-Item -ItemType Directory -Path $ProjectsOutDir -Force | Out-Null
 New-Item -ItemType Directory -Path $ModelsOutDir -Force | Out-Null
-
-# Copy demo project stems
-$LatestJobJson = Join-Path $RootDir "src\StemForge.Web\wwwroot\latest_gpu_job.json"
-if (Test-Path $LatestJobJson) {
-    try {
-        $jobObj = Get-Content $LatestJobJson -Raw | ConvertFrom-Json
-        $demoJobId = $jobObj.jobId
-        $demoSrcDir = Join-Path $RootDir "workspace_data\projects\$demoJobId"
-        if ($demoJobId -and (Test-Path $demoSrcDir)) {
-            Write-Host "      -> Bundling 21-stem GPU demo audio ($demoJobId)..." -ForegroundColor Gray
-            Copy-Item -Path $demoSrcDir -Destination (Join-Path $ProjectsOutDir $demoJobId) -Recurse -Force
-        }
-    } catch {}
-}
+New-Item -ItemType File -Path (Join-Path $ProjectsOutDir ".gitkeep") -Force | Out-Null
 
 if ($IncludeModels) {
     Write-Host "[4/5] Copying cached neural weights (UVR ONNX + Demucs v4)..." -ForegroundColor Green
@@ -133,15 +123,14 @@ pause
 # 3. README.txt
 $ReadmeTxt = @"
 ========================================================================
-StemForge Studio - 19+ 軌 AI 音樂分離工作站（便攜免安裝發布版）
+StemForge Studio v$Version - 19+ 軌 AI 音樂分離工作站（便攜免安裝發布版）
 ========================================================================
 
 【使用說明】：
 1. 立即啟動（任何 Windows 10/11 電腦，免裝 .NET，免裝 Python）：
    直接雙擊「Start_StemForge_Studio.bat」
    -> 系統會在 2 秒後自動於瀏覽器開啟 http://localhost:5188
-   -> 畫面已預載好 21 軌無損分離音軌，可立即 Solo/Mute/調整推桿試聽！
-   -> 內建 C# SIMD DSP 引擎支援直接拖放任意音樂檔案進行即時分軌！
+   -> 內建 C# SIMD DSP 引擎支援直接拖放任意音樂/影片檔案進行即時分軌！
 
 2. 啟用極致音質 NVIDIA GPU 神經網路加速（若電腦有 RTX/GTX 獨顯）：
    雙擊執行「Install_GPU_Environment.bat」
@@ -149,20 +138,34 @@ StemForge Studio - 19+ 軌 AI 音樂分離工作站（便攜免安裝發布版�
    -> 安裝完成後，日後只要雙擊「Start_StemForge_Studio.bat」即可享受秒級 GPU AI 深度推論！
 
 3. 匯出：
-   完成分軌後可一鍵下載 ZIP 包或直接匯出 Reaper (.rpp) 工程檔。
+   完成分軌後可一鍵下載 ZIP 包或直接匯出 Reaper (.rpp) 工程檔，或將勾選音軌即時合併為 WAV / MP3。
 ========================================================================
 "@
 [System.IO.File]::WriteAllText((Join-Path $OutDir "README.txt"), $ReadmeTxt, [System.Text.Encoding]::UTF8)
 
 if ($CreateZip) {
-    $ZipPath = Join-Path $RootDir "StemForge_Portable_Win64.zip"
     if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-    Write-Host "Compressing to $ZipPath ..." -ForegroundColor Cyan
-    Compress-Archive -Path "$OutDir\*" -DestinationPath $ZipPath -CompressionLevel Optimal
-    Write-Host "ZIP created: $ZipPath" -ForegroundColor Green
+    Write-Host "Fast compressing via Python to $ZipName ..." -ForegroundColor Cyan
+    python -c "
+import os, zipfile, time
+src = r'$OutDir'
+dst = r'$ZipPath'
+t0 = time.time()
+with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+    for root, dirs, files in os.walk(src):
+        for f in files:
+            fp = os.path.join(root, f)
+            z.write(fp, os.path.relpath(fp, src))
+size_mb = os.path.getsize(dst) / (1024 * 1024)
+print(f'ZIP created: {dst} ({size_mb:.2f} MB in {time.time()-t0:.1f}s)')
+"
 }
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "  Build successful! Path: $OutDir" -ForegroundColor Green
+if ($CreateZip) {
+    Write-Host "  Release ZIP: $ZipPath" -ForegroundColor Green
+}
+Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green

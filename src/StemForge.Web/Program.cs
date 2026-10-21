@@ -527,6 +527,13 @@ app.MapGet("/api/projects/{jobId}/load", (string jobId, DagOrchestrator orchestr
     return job != null ? Results.Ok(job) : Results.NotFound(new { error = "找不到該歷史專案" });
 });
 
+// 9.5 刪除指定歷史分軌專案
+app.MapDelete("/api/projects/{jobId}", (string jobId, DagOrchestrator orchestrator) =>
+{
+    bool success = orchestrator.DeleteProject(jobId);
+    return success ? Results.Ok(new { success = true, jobId }) : Results.NotFound(new { error = "找不到或無法刪除該歷史專案" });
+});
+
 // 10. 針對已分離專案動態新增任意自訂樂器音軌 (如 flute / 長笛 / saxophone / 大提琴)
 app.MapPost("/api/jobs/{jobId}/prompt/{prompt}", async (
     string jobId,
