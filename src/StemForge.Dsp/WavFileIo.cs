@@ -290,6 +290,23 @@ public static class WavFileIo
     }
 
     /// <summary>
+    /// 從指定起始秒數開始截取音訊緩衝區 (Trim / Slice)
+    /// </summary>
+    public static StereoAudioBuffer Slice(StereoAudioBuffer source, double startSec)
+    {
+        int startSample = Math.Max(0, (int)(startSec * source.SampleRate));
+        if (startSample >= source.Length)
+            return new StereoAudioBuffer(source.SampleRate, 0);
+
+        int newLen = source.Length - startSample;
+        var newL = new float[newLen];
+        var newR = new float[newLen];
+        Array.Copy(source.Left, startSample, newL, 0, newLen);
+        Array.Copy(source.Right, startSample, newR, 0, newLen);
+        return new StereoAudioBuffer(source.SampleRate, newL, newR);
+    }
+
+    /// <summary>
     /// 使用 FFmpeg 將 WAV 轉碼為指定碼率的高音質 MP3 (預設 320kbps CBR)
     /// </summary>
     public static void ConvertWavToMp3(string inputWavPath, string outputMp3Path, int bitrateKbps = 320)

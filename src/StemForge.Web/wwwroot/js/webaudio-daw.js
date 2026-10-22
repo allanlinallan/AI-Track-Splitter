@@ -217,6 +217,61 @@ class StemForgeDawApp {
       });
     }
 
+    // ✂️ 自動切齊開頭靜音元件 (Auto Trim Silence)
+    this.leadTrimSec = 0;
+    this.btnAutoTrimSilence = document.getElementById("btnAutoTrimSilence");
+    this.btnResetTrim = document.getElementById("btnResetTrim");
+    this.trimSilenceModal = document.getElementById("trimSilenceModal");
+    this.btnCloseTrimSilence = document.getElementById("btnCloseTrimSilence");
+    this.btnCancelTrimSilence = document.getElementById("btnCancelTrimSilence");
+    this.btnConfirmTrimSilence = document.getElementById("btnConfirmTrimSilence");
+    this.trimDetectInfo = document.getElementById("trimDetectInfo");
+    this.radioTrimBeat1 = document.getElementById("radioTrimBeat1");
+    this.radioTrimTight = document.getElementById("radioTrimTight");
+    this.trimAmountDisplay = document.getElementById("trimAmountDisplay");
+    this.optLabelTrimBeat1 = document.getElementById("optLabelTrimBeat1");
+    this.optLabelTrimTight = document.getElementById("optLabelTrimTight");
+    this.currentTrimAnalysis = null;
+
+    if (this.btnAutoTrimSilence) {
+      this.btnAutoTrimSilence.addEventListener("click", () => this.openTrimSilenceModal());
+    }
+    if (this.btnResetTrim) {
+      this.btnResetTrim.addEventListener("click", () => this.applyLeadTrim(0, true));
+    }
+    if (this.btnCloseTrimSilence) {
+      this.btnCloseTrimSilence.addEventListener("click", () => this.closeTrimSilenceModal());
+    }
+    if (this.btnCancelTrimSilence) {
+      this.btnCancelTrimSilence.addEventListener("click", () => this.closeTrimSilenceModal());
+    }
+    if (this.trimSilenceModal) {
+      this.trimSilenceModal.addEventListener("click", (e) => {
+        if (e.target === this.trimSilenceModal) this.closeTrimSilenceModal();
+      });
+    }
+    if (this.btnConfirmTrimSilence) {
+      this.btnConfirmTrimSilence.addEventListener("click", () => this.confirmTrimSilence());
+    }
+
+    const updateTrimRadioUi = () => {
+      if (!this.currentTrimAnalysis) return;
+      const isBeat1 = this.radioTrimBeat1 && this.radioTrimBeat1.checked;
+      const sec = isBeat1 ? this.currentTrimAnalysis.beat1TrimSec : this.currentTrimAnalysis.tightTrimSec;
+      if (this.trimAmountDisplay) {
+        this.trimAmountDisplay.textContent = `${sec.toFixed(2)} 秒`;
+      }
+      if (this.optLabelTrimBeat1) {
+        this.optLabelTrimBeat1.style.borderColor = isBeat1 ? "#10b981" : "#334155";
+      }
+      if (this.optLabelTrimTight) {
+        this.optLabelTrimTight.style.borderColor = !isBeat1 ? "#10b981" : "#334155";
+      }
+    };
+
+    if (this.radioTrimBeat1) this.radioTrimBeat1.addEventListener("change", updateTrimRadioUi);
+    if (this.radioTrimTight) this.radioTrimTight.addEventListener("change", updateTrimRadioUi);
+
     // 處理中半透明變暗遮罩元件 (Busy Overlay)
     this.busyOverlay = document.getElementById("mixerBusyOverlay");
     this.busyTitle = document.getElementById("busyOverlayTitle");
@@ -405,7 +460,9 @@ class StemForgeDawApp {
       if (!this.durationSec) return;
       const rect = this.timelineScrubber.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      this.seekTo(ratio * this.durationSec);
+      const globalSec = ratio * this.durationSec;
+      const targetSec = Math.max(0, globalSec - (this.leadTrimSec || 0));
+      this.seekTo(targetSec);
     });
 
     this.btnExportZip.addEventListener("click", () => this.exportFullZip());
@@ -846,11 +903,18 @@ class StemForgeDawApp {
 
     this.updateTrackGains();
 
+    if (projectState && typeof projectState.leadTrimSec === "number" && projectState.leadTrimSec > 0) {
+      this.applyLeadTrim(projectState.leadTrimSec, false);
+    } else {
+      this.applyLeadTrim(0, false);
+    }
+
     // 確保全部 DOM 掛載完成後繪製高解析度正規化波形
     setTimeout(() => {
       for (const t of this.tracks) {
         this.drawWaveform(t);
       }
+      this.renderLeadTrimOverlays();
       this.hideBusyOverlay();
     }, 50);
 
@@ -995,7 +1059,8 @@ class StemForgeDawApp {
           this.toggleRegionMute(track, reg.id);
         }
       } else {
-        this.seekTo(clickSec);
+        const targetSec = Math.max(0, clickSec - (this.leadTrimSec || 0));
+        this.seekTo(targetSec);
       }
     });
 
@@ -1244,7 +1309,8 @@ class StemForgeDawApp {
     this.stopActiveSourcesOnly();
     this.clearMetronome();
 
-    const offset = this.pauseOffsetSec >= this.durationSec ? 0 : this.pauseOffsetSec;
+    const maxPlayable = Math.max(0, this.durationSec - (this.leadTrimSec || 0));
+    const offset = this.pauseOffsetSec >= maxPlayable ? 0 : this.pauseOffsetSec;
     this.pauseOffsetSec = offset;
 
     const bpm = this.getCurrentBpm();
@@ -1279,14 +1345,15 @@ class StemForgeDawApp {
     }
 
     this.startTimeCtx = syncStartAt - offset;
+    const effectiveAudioStart = (this.leadTrimSec || 0) + offset;
 
     for (const t of this.tracks) {
       const src = this.audioCtx.createBufferSource();
       src.buffer = t.audioBuffer;
       src.connect(t.panNode);
-      src.start(syncStartAt, offset);
+      src.start(syncStartAt, effectiveAudioStart);
       this.activeSources.push(src);
-      this.scheduleTrackRegionGains(t, syncStartAt, offset);
+      this.scheduleTrackRegionGains(t, syncStartAt, effectiveAudioStart);
     }
 
     if (this.originalMixBuffer) {
@@ -1297,7 +1364,7 @@ class StemForgeDawApp {
       const mixSrc = this.audioCtx.createBufferSource();
       mixSrc.buffer = this.originalMixBuffer;
       mixSrc.connect(this.nullTestInvertNode);
-      mixSrc.start(syncStartAt, offset);
+      mixSrc.start(syncStartAt, effectiveAudioStart);
       this.activeSources.push(mixSrc);
     }
 
@@ -1334,7 +1401,8 @@ class StemForgeDawApp {
   }
 
   seekTo(targetSec) {
-    const clamped = Math.max(0, Math.min(this.durationSec, targetSec));
+    const maxPlayable = Math.max(0, this.durationSec - (this.leadTrimSec || 0));
+    const clamped = Math.max(0, Math.min(maxPlayable, targetSec));
     this.pauseOffsetSec = clamped;
     this.updatePlayheadUi(clamped);
     if (this.isPlaying) {
@@ -1368,7 +1436,8 @@ class StemForgeDawApp {
   tickPlayhead() {
     if (!this.isPlaying) return;
     const cur = this.getCurrentTimeSec();
-    if (cur >= this.durationSec) {
+    const maxPlayable = Math.max(0, this.durationSec - (this.leadTrimSec || 0));
+    if (cur >= maxPlayable) {
       this.stopPlayback();
       return;
     }
@@ -1381,10 +1450,18 @@ class StemForgeDawApp {
   }
 
   updatePlayheadUi(sec) {
-    document.getElementById("currentTimeText").textContent = this.formatTime(sec);
-    const pct = this.durationSec > 0 ? Math.min(100, (sec / this.durationSec) * 100) : 0;
-    document.getElementById("scrubberProgress").style.width = `${pct}%`;
-    document.getElementById("scrubberHead").style.left = `${pct}%`;
+    const maxPlayable = Math.max(0, this.durationSec - (this.leadTrimSec || 0));
+    const curTimeEl = document.getElementById("currentTimeText");
+    const totalTimeEl = document.getElementById("totalTimeText");
+    if (curTimeEl) curTimeEl.textContent = this.formatTime(sec);
+    if (totalTimeEl) totalTimeEl.textContent = this.formatTime(maxPlayable);
+
+    const globalSec = (this.leadTrimSec || 0) + sec;
+    const pct = this.durationSec > 0 ? Math.min(100, (globalSec / this.durationSec) * 100) : 0;
+    const scrubberProgress = document.getElementById("scrubberProgress");
+    const scrubberHead = document.getElementById("scrubberHead");
+    if (scrubberProgress) scrubberProgress.style.width = `${pct}%`;
+    if (scrubberHead) scrubberHead.style.left = `${pct}%`;
 
     for (const t of this.tracks) {
       if (t.playheadEl) {
@@ -1473,7 +1550,8 @@ class StemForgeDawApp {
       const payload = {
         selectedNodes: Array.from(this.checkedNodeIds),
         format: format,
-        mutedRanges: mutedRanges
+        mutedRanges: mutedRanges,
+        trimStartSec: this.leadTrimSec || 0
       };
       const r = await fetch(`/api/jobs/${this.currentJob.jobId}/mixdown`, {
         method: "POST",
@@ -2123,6 +2201,7 @@ class StemForgeDawApp {
     }
     return {
       updatedAt: new Date().toISOString(),
+      leadTrimSec: this.leadTrimSec || 0,
       trackStates
     };
   }
@@ -2344,6 +2423,237 @@ class StemForgeDawApp {
     if (this.btnPreviewPlay) {
       this.btnPreviewPlay.textContent = "▶ 播放試聽";
       this.btnPreviewPlay.classList.remove("playing");
+    }
+  }
+
+  showToast(msg) {
+    let t = document.getElementById("dawToast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "dawToast";
+      t.style.cssText = "position:fixed; bottom:24px; right:24px; background:#0f172a; color:#38bdf8; border:1px solid #0284c7; padding:12px 20px; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.6); font-size:14px; font-weight:700; z-index:99999; transition:all 0.3s ease; opacity:0; transform:translateY(10px); pointer-events:none;";
+      document.body.appendChild(t);
+    }
+    t.innerHTML = msg;
+    t.style.opacity = "1";
+    t.style.transform = "translateY(0)";
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      t.style.opacity = "0";
+      t.style.transform = "translateY(10px)";
+    }, 2800);
+  }
+
+  openTrimSilenceModal() {
+    if (!this.tracks || this.tracks.length === 0) {
+      alert("請先載入或分離一首歌曲！");
+      return;
+    }
+    if (!this.trimSilenceModal) return;
+
+    if (this.trimDetectInfo) {
+      this.trimDetectInfo.textContent = "🔍 正在掃描音訊開頭波形與拍點能量...";
+    }
+    this.trimSilenceModal.classList.add("active");
+
+    setTimeout(() => {
+      const res = this.analyzeLeadingSilence();
+      this.currentTrimAnalysis = res;
+
+      if (!res || !res.hasSilence) {
+        if (this.trimDetectInfo) {
+          this.trimDetectInfo.innerHTML = `✅ <strong>開頭已極度緊湊！</strong><br>首個音符在 <code>${(res ? res.firstSoundSec : 0).toFixed(3)}s</code>，未偵測到顯著前置死靜音。`;
+        }
+        if (this.trimAmountDisplay) this.trimAmountDisplay.textContent = "0.00 秒";
+      } else {
+        const bpm = this.getCurrentBpm();
+        if (this.trimDetectInfo) {
+          if (res.isPickup) {
+            this.trimDetectInfo.innerHTML = `💡 <strong>偵測到弱起拍（約倒數第 ${res.pickupBeats || 1} 拍起音）！</strong><br>` +
+              `• 首個音符於 <code>${res.firstSoundSec.toFixed(2)}s</code> 起唱 / 演奏<br>` +
+              `• 首個重拍 (Downbeat) 於 <code>${res.downbeatSec.toFixed(2)}s</code> 落下 (BPM: ${bpm})<br>` +
+              `👉 建議使用「<strong>🎯 智慧對齊第 1 拍</strong>」：將自動切除 <code>${res.beat1TrimSec.toFixed(2)}s</code> 前置死靜音，並完美預留弱起拍進場空間，與節拍器 100% 嚴絲合縫對齊！`;
+          } else {
+            this.trimDetectInfo.innerHTML = `💡 <strong>偵測到正拍起音！</strong><br>` +
+              `• 首個音符於 <code>${res.firstSoundSec.toFixed(2)}s</code> 響起 (BPM: ${bpm})<br>` +
+              `• 前置死靜音約 <code>${res.beat1TrimSec.toFixed(2)}s</code>。`;
+          }
+        }
+
+        const isBeat1 = this.radioTrimBeat1 && this.radioTrimBeat1.checked;
+        const trimSec = isBeat1 ? res.beat1TrimSec : res.tightTrimSec;
+        if (this.trimAmountDisplay) this.trimAmountDisplay.textContent = `${trimSec.toFixed(2)} 秒`;
+      }
+    }, 60);
+  }
+
+  closeTrimSilenceModal() {
+    if (this.trimSilenceModal) {
+      this.trimSilenceModal.classList.remove("active");
+    }
+  }
+
+  analyzeLeadingSilence() {
+    if (!this.tracks || this.tracks.length === 0) return null;
+
+    const sampleRate = this.tracks[0].audioBuffer.sampleRate || 44100;
+    const scanSeconds = Math.min(15, this.durationSec || 15);
+    const scanSamples = Math.floor(scanSeconds * sampleRate);
+    const blockSize = Math.floor(sampleRate * 0.01); // 10ms block
+    const numBlocks = Math.floor(scanSamples / blockSize);
+
+    const peaks = new Float32Array(numBlocks);
+
+    let drumBuffer = null;
+    let bassBuffer = null;
+    for (const t of this.tracks) {
+      const id = t.nodeId.toLowerCase();
+      if (id.includes("drum") && !id.includes("hihat") && !id.includes("cymbals")) {
+        drumBuffer = t.audioBuffer;
+      } else if (id.includes("bass")) {
+        bassBuffer = t.audioBuffer;
+      }
+    }
+
+    for (const t of this.tracks) {
+      if (!t.audioBuffer) continue;
+      const ch0 = t.audioBuffer.getChannelData(0);
+      const ch1 = t.audioBuffer.numberOfChannels > 1 ? t.audioBuffer.getChannelData(1) : ch0;
+      const maxS = Math.min(scanSamples, ch0.length);
+
+      for (let b = 0; b < numBlocks; b++) {
+        const start = b * blockSize;
+        const end = Math.min(start + blockSize, maxS);
+        let maxVal = 0;
+        for (let s = start; s < end; s += 4) {
+          const v = Math.max(Math.abs(ch0[s]), Math.abs(ch1[s]));
+          if (v > maxVal) maxVal = v;
+        }
+        if (maxVal > peaks[b]) peaks[b] = maxVal;
+      }
+    }
+
+    const silenceThreshold = 0.0045; // 約 -47 dBFS
+    let firstSoundBlock = -1;
+    for (let b = 0; b < numBlocks; b++) {
+      if (peaks[b] > silenceThreshold) {
+        firstSoundBlock = b;
+        break;
+      }
+    }
+
+    if (firstSoundBlock === -1) {
+      return { hasSilence: false, firstSoundSec: 0, beat1TrimSec: 0, tightTrimSec: 0 };
+    }
+
+    const firstSoundSec = Math.max(0, (firstSoundBlock * blockSize) / sampleRate);
+    const tightTrimSec = Math.max(0, firstSoundSec - 0.025);
+
+    const bpm = this.getCurrentBpm();
+    const beatSec = 60.0 / bpm;
+    const barSec = beatSec * 4;
+
+    let downbeatSec = firstSoundSec;
+    let maxRhythmEnergy = 0;
+
+    const rhythmSource = drumBuffer || bassBuffer || (this.tracks[0] ? this.tracks[0].audioBuffer : null);
+    if (rhythmSource) {
+      const ch = rhythmSource.getChannelData(0);
+      const searchStart = Math.floor(firstSoundSec * sampleRate);
+      const searchEnd = Math.min(ch.length, Math.floor((firstSoundSec + barSec) * sampleRate));
+
+      for (let s = searchStart; s < searchEnd; s += blockSize) {
+        let blockSum = 0;
+        const subEnd = Math.min(s + blockSize, searchEnd);
+        for (let i = s; i < subEnd; i += 4) {
+          blockSum += Math.abs(ch[i]);
+        }
+        if (blockSum > maxRhythmEnergy) {
+          maxRhythmEnergy = blockSum;
+          downbeatSec = s / sampleRate;
+        }
+      }
+    }
+
+    const diffSec = downbeatSec - firstSoundSec;
+    let beat1TrimSec = 0;
+    let isPickup = false;
+    let pickupBeats = 0;
+
+    if (diffSec > beatSec * 0.4) {
+      isPickup = true;
+      pickupBeats = Math.max(1, Math.round(diffSec / beatSec));
+      let measureStart = downbeatSec - barSec;
+      while (measureStart < 0) {
+        measureStart += beatSec;
+      }
+      if (measureStart <= firstSoundSec && measureStart >= 0) {
+        beat1TrimSec = Math.max(0, measureStart);
+      } else {
+        beat1TrimSec = Math.max(0, firstSoundSec - (barSec - diffSec));
+      }
+    } else {
+      beat1TrimSec = tightTrimSec;
+    }
+
+    return {
+      hasSilence: firstSoundSec >= 0.08,
+      firstSoundSec,
+      downbeatSec,
+      isPickup,
+      pickupBeats,
+      beat1TrimSec: Math.round(beat1TrimSec * 100) / 100,
+      tightTrimSec: Math.round(tightTrimSec * 100) / 100
+    };
+  }
+
+  confirmTrimSilence() {
+    if (!this.currentTrimAnalysis) {
+      this.closeTrimSilenceModal();
+      return;
+    }
+    const isBeat1 = this.radioTrimBeat1 && this.radioTrimBeat1.checked;
+    const sec = isBeat1 ? this.currentTrimAnalysis.beat1TrimSec : this.currentTrimAnalysis.tightTrimSec;
+    this.closeTrimSilenceModal();
+    this.applyLeadTrim(sec, true);
+  }
+
+  applyLeadTrim(sec, showToast = true) {
+    this.leadTrimSec = Math.max(0, sec);
+    if (this.btnResetTrim) {
+      this.btnResetTrim.style.display = this.leadTrimSec > 0 ? "inline-block" : "none";
+    }
+    this.pauseOffsetSec = 0;
+    this.updatePlayheadUi(0);
+    this.renderLeadTrimOverlays();
+
+    if (showToast) {
+      if (this.leadTrimSec > 0) {
+        this.showToast(`✂️ 已自動切齊開頭 ${this.leadTrimSec.toFixed(2)} 秒前置靜音！起點對齊 00:00.000`);
+      } else {
+        this.showToast(`⟲ 已恢復原始音軌開頭長度`);
+      }
+    }
+  }
+
+  renderLeadTrimOverlays() {
+    for (const t of this.tracks) {
+      if (!t.rowEl) continue;
+      const wrap = t.rowEl.querySelector(".track-waveform-wrap");
+      if (!wrap) continue;
+      let overlay = wrap.querySelector(".lead-trim-overlay");
+      if (this.leadTrimSec > 0 && this.durationSec > 0) {
+        if (!overlay) {
+          overlay = document.createElement("div");
+          overlay.className = "lead-trim-overlay";
+          wrap.appendChild(overlay);
+        }
+        const pct = (this.leadTrimSec / this.durationSec) * 100;
+        overlay.style.width = `${pct}%`;
+        overlay.innerHTML = `<span class="lead-trim-badge">🚩 起點 [-${this.leadTrimSec.toFixed(2)}s]</span>`;
+      } else if (overlay) {
+        overlay.remove();
+      }
     }
   }
 

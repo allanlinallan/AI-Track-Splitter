@@ -419,6 +419,7 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     List<string>? selectedNodeIds = null;
     string format = "wav"; // "wav" or "mp3"
     Dictionary<string, List<(double StartSec, double EndSec)>>? mutedRangesMap = null;
+    double trimStartSec = 0;
 
     if (httpReq.HasJsonContentType())
     {
@@ -429,6 +430,10 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
             if (!string.IsNullOrWhiteSpace(body))
             {
                 using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("trimStartSec", out var trimEl) && trimEl.TryGetDouble(out var ts))
+                {
+                    trimStartSec = Math.Max(0, ts);
+                }
                 if (doc.RootElement.TryGetProperty("selectedNodes", out var nodesEl) && nodesEl.ValueKind == JsonValueKind.Array)
                 {
                     selectedNodeIds = nodesEl.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrEmpty(x)).ToList()!;
@@ -499,6 +504,10 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     }
 
     var mixdownBuffer = WavFileIo.Mixdown(buffers);
+    if (trimStartSec > 0)
+    {
+        mixdownBuffer = WavFileIo.Slice(mixdownBuffer, trimStartSec);
+    }
     string jobDir = Path.Combine(projectsDir, jobId);
     string baseSongName = Path.GetFileNameWithoutExtension(job.OriginalFileName);
     int trackCount = activeStems.Count;

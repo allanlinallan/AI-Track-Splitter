@@ -165,6 +165,9 @@
           <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 2)">✂️ 剪刀</button>
           <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 3)">🔇 片段消音</button>
           <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段">⟲ 重置剪輯</button>
+          <span style="color: #334155; margin: 0 4px;">|</span>
+          <button class="edit-tool-btn btn-tool-trim" id="btnAutoTrimSilence" title="AI 自動偵測開頭無音訊靜音，智慧對齊第 1 拍（自動識別弱起拍/半拍起音）">⚡ 自動切齊開頭</button>
+          <button class="edit-tool-btn btn-tool-reset" id="btnResetTrim" style="display: none;" title="恢復原始開頭位置">⟲ 恢復原點</button>
         </div>
 
         <div class="timecode-box">
@@ -293,6 +296,53 @@
         <div style="display:flex; justify-content:flex-end; gap:12px;">
           <button class="btn" id="btnCancelSaveAs" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
           <button class="btn btn-primary" id="btnConfirmSaveAs" style="background:#2563eb; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">💾 確認另存新專案</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✂️ AI 自動切齊開頭靜音彈窗 (Auto Trim Silence Modal) -->
+  <div class="history-modal" id="trimSilenceModal">
+    <div class="history-modal-content" style="max-width: 540px; border: 1px solid #10b981; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
+      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
+        <h3 style="color: #34d399; display: flex; align-items: center; gap: 8px;">✂️ AI 自動切齊開頭靜音 (Auto-Trim Silence)</h3>
+        <button class="btn-close" id="btnCloseTrimSilence">&times;</button>
+      </div>
+      <div style="padding: 24px;">
+        <div id="trimDetectInfo" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px; color: #a7f3d0; font-size: 0.9rem; margin-bottom: 18px; line-height: 1.5;">
+          正在掃描開頭波形與拍點能量...
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+          <label id="optLabelTrimBeat1" style="display: flex; gap: 12px; align-items: flex-start; background: #0f172a; border: 2px solid #10b981; border-radius: 8px; padding: 14px; cursor: pointer;">
+            <input type="radio" name="trimModeRadio" id="radioTrimBeat1" value="beat1" checked style="margin-top: 3px; accent-color: #10b981;" />
+            <div>
+              <div style="color: #f1f5f9; font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">🎯 智慧對齊第 1 拍 (推薦：適合對拍 / 預備拍)</div>
+              <div style="color: #94a3b8; font-size: 0.85rem; line-height: 1.4;">
+                結合 BPM 拍速與鼓組/重音偵測，自動辨識弱起小節（最後一拍或半拍搶拍起音），將起點切在小節第 1 拍，節拍器與預拍一小節 100% 嚴絲合縫對齊！
+              </div>
+            </div>
+          </label>
+
+          <label id="optLabelTrimTight" style="display: flex; gap: 12px; align-items: flex-start; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px; cursor: pointer;">
+            <input type="radio" name="trimModeRadio" id="radioTrimTight" value="tight" style="margin-top: 3px; accent-color: #10b981;" />
+            <div>
+              <div style="color: #f1f5f9; font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">⚡ 緊貼第一聲起音 (Tight Cut)</div>
+              <div style="color: #94a3b8; font-size: 0.85rem; line-height: 1.4;">
+                直接切齊第一個音符波形開頭（預留 20ms 防爆音呼吸空間），完全不留任何前奏空白。
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div style="background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 14px; font-size: 0.88rem; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <span>預計切除前置空白：</span>
+          <strong id="trimAmountDisplay" style="color: #38bdf8; font-size: 1.1rem; font-family: Consolas, monospace;">0.00 秒</strong>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+          <button class="btn" id="btnCancelTrimSilence" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
+          <button class="btn btn-primary" id="btnConfirmTrimSilence" style="background:#059669; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">✂️ 套用切齊</button>
         </div>
       </div>
     </div>
