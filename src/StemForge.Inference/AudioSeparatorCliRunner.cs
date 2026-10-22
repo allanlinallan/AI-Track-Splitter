@@ -367,4 +367,210 @@ public sealed class AudioSeparatorCliRunner
         await proc.WaitForExitAsync(ct);
         return proc.ExitCode == 0;
     }
+
+    /// <summary>
+    /// 調度 Python CLI 執行 librosa 原始拍速 (BPM) 偵測
+    /// </summary>
+    public async Task<double> DetectAudioBpmAsync(string audioPath, CancellationToken ct = default)
+    {
+        string cliScript = Path.Combine(_aiEngineDir, "stemforge_cli.py");
+        if (!File.Exists(cliScript) || !File.Exists(audioPath))
+            return 120.0;
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetPythonExecutable(),
+            Arguments = $"\"{cliScript}\" --task detect-bpm --input \"{audioPath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+        string output = await proc.StandardOutput.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        foreach (var line in output.Split('\n'))
+        {
+            int braceStart = line.IndexOf('{');
+            int braceEnd = line.LastIndexOf('}');
+            if (braceStart >= 0 && braceEnd > braceStart)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(line[braceStart..(braceEnd + 1)]);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("result", out var resObj))
+                    {
+                        if (resObj.TryGetProperty("bpm", out var bpmProp))
+                        {
+                            return bpmProp.GetDouble();
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        return 120.0;
+    }
+
+    /// <summary>
+    /// 調度 Phase-Vocoder (FFmpeg atempo) 進行 21 軌無損時間軸變速不變調
+    /// </summary>
+    public async Task<bool> TimeStretchStemsAsync(
+        string stemsDir,
+        string outputDir,
+        double tempoRatio,
+        Func<double, string, Task>? onProgress = null,
+        CancellationToken ct = default)
+    {
+        string cliScript = Path.Combine(_aiEngineDir, "stemforge_cli.py");
+        if (!File.Exists(cliScript) || !Directory.Exists(stemsDir))
+            return false;
+
+        Directory.CreateDirectory(outputDir);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetPythonExecutable(),
+            Arguments = $"\"{cliScript}\" --task time-stretch --input \"{stemsDir}\" --output-dir \"{outputDir}\" --tempo-ratio {tempoRatio.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)}",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+        var stderrDrain = proc.StandardError.ReadToEndAsync(ct);
+
+        while (!proc.StandardOutput.EndOfStream)
+        {
+            ct.ThrowIfCancellationRequested();
+            string? line = await proc.StandardOutput.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            int braceStart = line.IndexOf('{');
+            int braceEnd = line.LastIndexOf('}');
+            if (braceStart >= 0 && braceEnd > braceStart)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(line[braceStart..(braceEnd + 1)]);
+                    var root = doc.RootElement;
+                    string type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "" : "";
+                    if (type == "progress" && onProgress != null)
+                    {
+                        double pct = root.TryGetProperty("percent", out var pProp) ? pProp.GetDouble() : 50.0;
+                        string msg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() ?? "" : "21 軌時間軸變速中...";
+                        await onProgress(pct, msg);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        await proc.WaitForExitAsync(ct);
+        return proc.ExitCode == 0;
+    }
+
+    /// <summary>
+    /// 調度 GPU 執行神經樂器音色風格遷移 (Audio-to-Audio Neural Timbre Transfer)
+    /// </summary>
+    public async Task<(bool Success, string OutputPath, string InstrumentName, string ErrorMessage)> RunTimbreTransferAsync(
+        string inputAudioPath,
+        string outputAudioPath,
+        string instrument,
+        Func<double, string, Task>? onProgress = null,
+        CancellationToken ct = default)
+    {
+        string cliScript = Path.Combine(_aiEngineDir, "stemforge_cli.py");
+        if (!File.Exists(cliScript))
+            return (false, "", "", $"找不到 CLI 腳本: {cliScript}");
+
+        if (!File.Exists(inputAudioPath))
+            return (false, "", "", $"找不到輸入音訊檔案: {inputAudioPath}");
+
+        var outDir = Path.GetDirectoryName(outputAudioPath);
+        if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetPythonExecutable(),
+            Arguments = $"\"{cliScript}\" --task timbre-transfer --input \"{inputAudioPath}\" --output \"{outputAudioPath}\" --instrument \"{instrument}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+
+        string instrumentName = instrument;
+        string finalOutputPath = outputAudioPath;
+        string? errorMsg = null;
+
+        while (!proc.StandardOutput.EndOfStream)
+        {
+            ct.ThrowIfCancellationRequested();
+            string? line = await proc.StandardOutput.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            int braceStart = line.IndexOf('{');
+            int braceEnd = line.LastIndexOf('}');
+            if (braceStart >= 0 && braceEnd > braceStart)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(line[braceStart..(braceEnd + 1)]);
+                    var root = doc.RootElement;
+                    string type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "" : "";
+                    if (type == "progress" && onProgress != null)
+                    {
+                        double pct = root.TryGetProperty("percent", out var pProp) ? pProp.GetDouble() : 50.0;
+                        string msg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() ?? "" : "神經樂器音色遷移中...";
+                        await onProgress(pct, msg);
+                    }
+                    else if (type == "completed")
+                    {
+                        if (root.TryGetProperty("result", out var resObj))
+                        {
+                            if (resObj.TryGetProperty("instrumentName", out var inProp))
+                                instrumentName = inProp.GetString() ?? instrument;
+                            if (resObj.TryGetProperty("outputPath", out var outProp))
+                                finalOutputPath = outProp.GetString() ?? outputAudioPath;
+                        }
+                    }
+                    else if (type == "error")
+                    {
+                        errorMsg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() : "執行失敗";
+                    }
+                }
+                catch { }
+            }
+        }
+
+        string errOutput = await proc.StandardError.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        if (proc.ExitCode != 0)
+        {
+            return (false, "", "", errorMsg ?? (string.IsNullOrWhiteSpace(errOutput) ? "神經音色遷移程序異常終止" : errOutput));
+        }
+
+        return (true, finalOutputPath, instrumentName, "");
+    }
 }

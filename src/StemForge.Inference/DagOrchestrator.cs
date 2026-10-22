@@ -77,17 +77,25 @@ public sealed class DagOrchestrator
             if (stemCount == 0) continue;
 
             string songName = jobId;
-            string? uploadFile = Directory.GetFiles(dir, "upload_*").FirstOrDefault();
-            if (uploadFile != null)
+            string projNameFile = Path.Combine(dir, "project_name.txt");
+            if (File.Exists(projNameFile))
             {
-                songName = Path.GetFileName(uploadFile).Replace("upload_", "");
+                songName = File.ReadAllText(projNameFile).Trim();
             }
             else
             {
-                string? rpp = Directory.GetFiles(dir, "*_StemForge.rpp").FirstOrDefault();
-                if (rpp != null)
+                string? uploadFile = Directory.GetFiles(dir, "upload_*").FirstOrDefault();
+                if (uploadFile != null)
                 {
-                    songName = Path.GetFileName(rpp).Replace("_StemForge.rpp", "");
+                    songName = Path.GetFileName(uploadFile).Replace("upload_", "");
+                }
+                else
+                {
+                    string? rpp = Directory.GetFiles(dir, "*_StemForge.rpp").FirstOrDefault();
+                    if (rpp != null)
+                    {
+                        songName = Path.GetFileName(rpp).Replace("_StemForge.rpp", "");
+                    }
                 }
             }
 
@@ -113,17 +121,25 @@ public sealed class DagOrchestrator
         if (!File.Exists(origWav) || !Directory.Exists(stemsDir)) return null;
 
         string songName = jobId;
-        string? uploadFile = Directory.GetFiles(jobDir, "upload_*").FirstOrDefault();
-        if (uploadFile != null)
+        string projNameFile = Path.Combine(jobDir, "project_name.txt");
+        if (File.Exists(projNameFile))
         {
-            songName = Path.GetFileName(uploadFile).Replace("upload_", "");
+            songName = File.ReadAllText(projNameFile).Trim();
         }
         else
         {
-            string? rppFile = Directory.GetFiles(jobDir, "*_StemForge.rpp").FirstOrDefault();
-            if (rppFile != null)
+            string? uploadFile = Directory.GetFiles(jobDir, "upload_*").FirstOrDefault();
+            if (uploadFile != null)
             {
-                songName = Path.GetFileName(rppFile).Replace("_StemForge.rpp", "");
+                songName = Path.GetFileName(uploadFile).Replace("upload_", "");
+            }
+            else
+            {
+                string? rppFile = Directory.GetFiles(jobDir, "*_StemForge.rpp").FirstOrDefault();
+                if (rppFile != null)
+                {
+                    songName = Path.GetFileName(rppFile).Replace("_StemForge.rpp", "");
+                }
             }
         }
 
@@ -184,6 +200,28 @@ public sealed class DagOrchestrator
             catch { }
         }
 
+        double? detectedBpm = null;
+        string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
+        if (File.Exists(bpmJsonPath))
+        {
+            try
+            {
+                using var bDoc = JsonDocument.Parse(File.ReadAllText(bpmJsonPath));
+                if (bDoc.RootElement.TryGetProperty("bpm", out var bProp))
+                {
+                    detectedBpm = bProp.GetDouble();
+                }
+            }
+            catch { }
+        }
+
+        string? projectStateJson = null;
+        string statePath = Path.Combine(jobDir, "project_state.json");
+        if (File.Exists(statePath))
+        {
+            try { projectStateJson = File.ReadAllText(statePath); } catch { }
+        }
+
         var restored = new SeparationJobResult
         {
             JobId = jobId,
@@ -197,6 +235,10 @@ public sealed class DagOrchestrator
             ReaperRppUrl = rppUrl,
             DetectedKey = detectedKey,
             DetectedKeyDisplayName = detectedKeyZh,
+            DetectedBpm = detectedBpm,
+            CurrentTempoRatio = 1.0,
+            TargetBpm = detectedBpm,
+            ProjectStateJson = projectStateJson,
             Stems = stemResults
         };
 
@@ -302,6 +344,17 @@ public sealed class DagOrchestrator
             result.DetectedKeyDisplayName = d;
             string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
             await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key = k, displayName = d }), ct);
+        }
+        catch { }
+
+        try
+        {
+            double bpm = await _cliRunner.DetectAudioBpmAsync(sourceWavPath, ct);
+            result.DetectedBpm = bpm;
+            result.CurrentTempoRatio = 1.0;
+            result.TargetBpm = bpm;
+            string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
+            await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm }), ct);
         }
         catch { }
 
@@ -1045,5 +1098,102 @@ public sealed class DagOrchestrator
             cacheHit,
             stem
         ));
+    }
+
+    /// <summary>
+    /// 將現有分軌專案完整另存為新專案 (獨立 JobId、獨立檔案、自訂名稱、保留剪輯消音狀態)
+    /// </summary>
+    public async Task<SeparationJobResult?> SaveAsProjectAsync(
+        string sourceJobId,
+        string newProjectName,
+        string? trackStatesJson = null,
+        CancellationToken ct = default)
+    {
+        var sourceJob = GetJobResult(sourceJobId);
+        string sourceDir = Path.Combine(_workspaceDataDir, "projects", sourceJobId);
+        if (!Directory.Exists(sourceDir)) return null;
+
+        string cleanName = string.Join("_", newProjectName.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+        if (string.IsNullOrWhiteSpace(cleanName)) cleanName = $"{sourceJobId}_Copy";
+
+        string newJobId = Guid.NewGuid().ToString("N")[..10];
+        string targetDir = Path.Combine(_workspaceDataDir, "projects", newJobId);
+        Directory.CreateDirectory(targetDir);
+
+        // 複製目錄結構與所有分軌檔案
+        CopyDirectoryRecursively(sourceDir, targetDir);
+
+        // 寫入自訂專案名稱標籤 (project_name.txt)
+        await File.WriteAllTextAsync(Path.Combine(targetDir, "project_name.txt"), cleanName, ct);
+
+        // 若有傳入當前剪輯消音狀態，寫入新專案的 project_state.json
+        if (!string.IsNullOrWhiteSpace(trackStatesJson))
+        {
+            await File.WriteAllTextAsync(Path.Combine(targetDir, "project_state.json"), trackStatesJson, ct);
+        }
+
+        // 清理舊的 upload_* 虛擬標籤並建立新標籤
+        foreach (var oldUp in Directory.GetFiles(targetDir, "upload_*"))
+        {
+            try { File.Delete(oldUp); } catch { }
+        }
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(targetDir, $"upload_{cleanName}.wav"), "", ct);
+        }
+        catch { }
+
+        // 清理舊的 RPP 工程檔標籤
+        foreach (var oldRpp in Directory.GetFiles(targetDir, "*_StemForge.rpp"))
+        {
+            try { File.Delete(oldRpp); } catch { }
+        }
+
+        // 重新從磁碟建構新專案的 SeparationJobResult
+        var newJob = TryRestoreJobFromDisk(newJobId);
+        if (newJob != null)
+        {
+            newJob.OriginalFileName = cleanName;
+            if (!string.IsNullOrWhiteSpace(trackStatesJson))
+            {
+                newJob.ProjectStateJson = trackStatesJson;
+            }
+            _jobs[newJobId] = newJob;
+        }
+
+        return newJob;
+    }
+
+    /// <summary>
+    /// 保存現有專案的剪輯消音狀態 (project_state.json)
+    /// </summary>
+    public async Task<bool> SaveProjectStateAsync(string jobId, string trackStatesJson, CancellationToken ct = default)
+    {
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        if (!Directory.Exists(jobDir)) return false;
+
+        string statePath = Path.Combine(jobDir, "project_state.json");
+        await File.WriteAllTextAsync(statePath, trackStatesJson, ct);
+
+        if (_jobs.TryGetValue(jobId, out var job))
+        {
+            job.ProjectStateJson = trackStatesJson;
+        }
+        return true;
+    }
+
+    private static void CopyDirectoryRecursively(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        foreach (string file in Directory.GetFiles(sourceDir))
+        {
+            string dest = Path.Combine(targetDir, Path.GetFileName(file));
+            File.Copy(file, dest, overwrite: true);
+        }
+        foreach (string subDir in Directory.GetDirectories(sourceDir))
+        {
+            string destSub = Path.Combine(targetDir, Path.GetFileName(subDir));
+            CopyDirectoryRecursively(subDir, destSub);
+        }
     }
 }

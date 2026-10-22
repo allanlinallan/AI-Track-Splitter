@@ -102,9 +102,28 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
-app.MapHub<SeparationHub>("/hubs/separation");
+// 0. 本機音源即時預覽串流 (支援 Range Requests，即時預聽任意格式)
+app.MapGet("/api/preview/local-file", (string path) =>
+{
+    string clean = path.Trim('"').Trim();
+    if (!File.Exists(clean)) return Results.NotFound(new { error = "找不到該本機音源檔案" });
+    string ext = Path.GetExtension(clean).ToLowerInvariant();
+    string contentType = ext switch
+    {
+        ".mp3" => "audio/mpeg",
+        ".wav" => "audio/wav",
+        ".flac" => "audio/flac",
+        ".m4a" => "audio/mp4",
+        ".ogg" => "audio/ogg",
+        ".mp4" => "video/mp4",
+        ".mov" => "video/quicktime",
+        ".webm" => "video/webm",
+        _ => "application/octet-stream"
+    };
+    return Results.File(clean, contentType, enableRangeProcessing: true);
+});
 
-app.MapGet("/favicon.ico", () => Results.NoContent());
+app.MapHub<SeparationHub>("/hubs/separation");
 
 // 1. 取得硬體 (RTX 4050 6GB VRAM) 與環境狀態
 app.MapGet("/api/system/status", async (DagOrchestrator orchestrator) =>
@@ -276,6 +295,72 @@ app.MapPost("/api/jobs/{jobId}/midi/{nodeId}", async (
     });
 });
 
+// 6.1. 單軌神經樂器音色風格遷移 (Audio-to-Audio Timbre Transfer)
+app.MapPost("/api/jobs/{jobId}/timbre-transfer", async (
+    string jobId,
+    HttpRequest request,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該任務" });
+
+    using var reader = new StreamReader(request.Body);
+    string body = await reader.ReadToEndAsync(ct);
+    using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+    var root = doc.RootElement;
+    string nodeId = root.TryGetProperty("nodeId", out var np) ? np.GetString() ?? "" : "";
+    string instrument = root.TryGetProperty("instrument", out var ip) ? ip.GetString() ?? "violin" : "violin";
+
+    if (string.IsNullOrWhiteSpace(nodeId))
+        return Results.BadRequest(new { error = "缺少 nodeId 參數" });
+
+    string jobDir = Path.Combine(projectsDir, jobId);
+    var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+    string? inputWavPath = stem?.FilePath;
+
+    if (string.IsNullOrEmpty(inputWavPath) || !File.Exists(inputWavPath))
+    {
+        // 若找不到，嘗試從 raw_stems 目錄比對
+        string rawDir = Path.Combine(jobDir, "raw_stems");
+        if (Directory.Exists(rawDir))
+        {
+            var matchFile = Directory.GetFiles(rawDir, "*.wav")
+                .FirstOrDefault(f => Path.GetFileName(f).Contains(nodeId, StringComparison.OrdinalIgnoreCase));
+            if (matchFile != null) inputWavPath = matchFile;
+        }
+    }
+
+    if (string.IsNullOrEmpty(inputWavPath) || !File.Exists(inputWavPath))
+        return Results.NotFound(new { error = $"找不到音軌 WAV 檔案 (nodeId: {nodeId})" });
+
+    string outDir = Path.Combine(jobDir, "timbre_transfers");
+    Directory.CreateDirectory(outDir);
+    string safeBaseName = Path.GetFileNameWithoutExtension(inputWavPath);
+    string outFileName = $"{safeBaseName}_{instrument}.wav";
+    string outputWavPath = Path.Combine(outDir, outFileName);
+
+    var (success, finalPath, instrumentName, errorMsg) = await orchestrator.CliRunner.RunTimbreTransferAsync(
+        inputWavPath,
+        outputWavPath,
+        instrument,
+        null,
+        ct);
+
+    if (!success)
+        return Results.BadRequest(new { error = $"神經音色遷移失敗: {errorMsg}" });
+
+    string relativeUrl = $"/projects/{jobId}/timbre_transfers/{outFileName}";
+    return Results.Ok(new
+    {
+        nodeId = stem?.NodeId ?? nodeId,
+        instrument = instrument,
+        instrumentName = instrumentName,
+        audioUrl = relativeUrl,
+        fileName = outFileName
+    });
+});
+
 // 7. 打包下載指定或整包分軌 ZIP (含 32-bit WAV + MIDI + Reaper .rpp)
 app.MapPost("/api/jobs/{jobId}/export-zip", async (
     string jobId,
@@ -333,6 +418,7 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
 
     List<string>? selectedNodeIds = null;
     string format = "wav"; // "wav" or "mp3"
+    Dictionary<string, List<(double StartSec, double EndSec)>>? mutedRangesMap = null;
 
     if (httpReq.HasJsonContentType())
     {
@@ -350,6 +436,25 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
                 if (doc.RootElement.TryGetProperty("format", out var formatEl))
                 {
                     format = formatEl.GetString()?.ToLowerInvariant() ?? "wav";
+                }
+                if (doc.RootElement.TryGetProperty("mutedRanges", out var mutedEl) && mutedEl.ValueKind == JsonValueKind.Object)
+                {
+                    mutedRangesMap = new(StringComparer.OrdinalIgnoreCase);
+                    foreach (var prop in mutedEl.EnumerateObject())
+                    {
+                        var ranges = new List<(double, double)>();
+                        if (prop.Value.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in prop.Value.EnumerateArray())
+                            {
+                                if (item.TryGetProperty("startSec", out var sProp) && item.TryGetProperty("endSec", out var eProp))
+                                {
+                                    ranges.Add((sProp.GetDouble(), eProp.GetDouble()));
+                                }
+                            }
+                        }
+                        mutedRangesMap[prop.Name] = ranges;
+                    }
                 }
             }
         }
@@ -370,7 +475,21 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     {
         if (File.Exists(stem.FilePath))
         {
-            buffers.Add(WavFileIo.ReadStereoAudio(stem.FilePath));
+            var buf = WavFileIo.ReadStereoAudio(stem.FilePath);
+            if (mutedRangesMap != null && mutedRangesMap.TryGetValue(stem.NodeId, out var mRanges))
+            {
+                foreach (var (startSec, endSec) in mRanges)
+                {
+                    int startSample = Math.Clamp((int)(startSec * buf.SampleRate), 0, buf.Length);
+                    int endSample = Math.Clamp((int)(endSec * buf.SampleRate), 0, buf.Length);
+                    if (endSample > startSample)
+                    {
+                        Array.Clear(buf.Left, startSample, endSample - startSample);
+                        Array.Clear(buf.Right, startSample, endSample - startSample);
+                    }
+                }
+            }
+            buffers.Add(buf);
         }
     }
 
@@ -420,7 +539,7 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
 // 7.6 PyTorch GPU 神經變調 API (升降半音 -6 ~ +6)
 app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
     string jobId,
-    HttpRequest httpReq,
+    PitchShiftRequest? req,
     DagOrchestrator orchestrator,
     IHubContext<SeparationHub> hub,
     CancellationToken ct) =>
@@ -428,24 +547,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
     var job = orchestrator.GetJobResult(jobId);
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
-    int semitones = 0;
-    if (httpReq.HasJsonContentType())
-    {
-        try
-        {
-            using var reader = new StreamReader(httpReq.Body);
-            var body = await reader.ReadToEndAsync(ct);
-            if (!string.IsNullOrWhiteSpace(body))
-            {
-                using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.TryGetProperty("semitones", out var sProp))
-                {
-                    semitones = Math.Clamp(sProp.GetInt32(), -6, 6);
-                }
-            }
-        }
-        catch { }
-    }
+    int semitones = Math.Clamp(req?.Semitones ?? 0, -6, 6);
 
     string jobDir = Path.Combine(projectsDir, jobId);
     string stemsDir = Path.Combine(jobDir, "stems");
@@ -513,6 +615,113 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
     });
 });
 
+// 7.7 Phase-Vocoder 時間軸無損變速不變調 API (0.5x ~ 2.0x, 21 軌平行加速)
+app.MapPost("/api/jobs/{jobId}/time-stretch", async (
+    string jobId,
+    TimeStretchRequest? req,
+    DagOrchestrator orchestrator,
+    IHubContext<SeparationHub> hub,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    double origBpm = job.DetectedBpm ?? 120.0;
+    double tempoRatio = req?.TempoRatio ?? 1.0;
+    double? targetBpm = req?.TargetBpm;
+
+    if (targetBpm == null || targetBpm <= 0)
+    {
+        targetBpm = Math.Round(origBpm * tempoRatio, 1);
+    }
+    else if (req?.TempoRatio == null && origBpm > 0)
+    {
+        tempoRatio = targetBpm.Value / origBpm;
+    }
+    tempoRatio = Math.Clamp(tempoRatio, 0.5, 2.0);
+
+    string jobDir = Path.Combine(projectsDir, jobId);
+    string stemsDir = Path.Combine(jobDir, "stems");
+
+    // 若接近 1.0，表示恢復原始速度
+    if (Math.Abs(tempoRatio - 1.0) < 0.005)
+    {
+        job.CurrentTempoRatio = 1.0;
+        job.TargetBpm = origBpm;
+        foreach (var stem in job.Stems)
+        {
+            string fn = Path.GetFileName(stem.FilePath);
+            if (job.CurrentPitchShift != 0 && Directory.Exists(Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}")))
+            {
+                stem.RelativeUrl = $"/projects/{jobId}/pitch_{job.CurrentPitchShift}/{fn}";
+            }
+            else
+            {
+                stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
+            }
+        }
+        return Results.Ok(new
+        {
+            jobId,
+            tempoRatio = 1.0,
+            detectedBpm = origBpm,
+            targetBpm = origBpm,
+            stems = job.Stems
+        });
+    }
+
+    int targetBpmInt = (int)Math.Round(targetBpm.Value);
+    string tempoOutDir = Path.Combine(jobDir, $"tempo_{targetBpmInt}");
+    Directory.CreateDirectory(tempoOutDir);
+
+    int existingCount = Directory.Exists(tempoOutDir) ? Directory.GetFiles(tempoOutDir, "*.wav").Length : 0;
+    if (existingCount < job.Stems.Count)
+    {
+        string sourceStemsDir = stemsDir;
+        if (job.CurrentPitchShift != 0)
+        {
+            string pitchedDir = Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}");
+            if (Directory.Exists(pitchedDir) && Directory.GetFiles(pitchedDir, "*.wav").Length >= job.Stems.Count)
+            {
+                sourceStemsDir = pitchedDir;
+            }
+        }
+
+        await orchestrator.CliRunner.TimeStretchStemsAsync(
+            sourceStemsDir,
+            tempoOutDir,
+            tempoRatio,
+            async (pct, msg) =>
+            {
+                await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(
+                    jobId, "TIME_STRETCH", $"時間軸變速 ({tempoRatio:F2}x, {targetBpmInt} BPM)", pct, pct, msg
+                ), ct);
+            },
+            ct);
+    }
+
+    job.CurrentTempoRatio = tempoRatio;
+    job.TargetBpm = targetBpm;
+    foreach (var stem in job.Stems)
+    {
+        string fn = Path.GetFileName(stem.FilePath);
+        string stretchedFile = Path.Combine(tempoOutDir, fn);
+        if (File.Exists(stretchedFile))
+        {
+            stem.RelativeUrl = $"/projects/{jobId}/tempo_{targetBpmInt}/{fn}";
+        }
+    }
+
+    return Results.Ok(new
+    {
+        jobId,
+        tempoRatio,
+        detectedBpm = origBpm,
+        targetBpm = targetBpm.Value,
+        stems = job.Stems
+    });
+});
+
 // 8. 取得本機歷史分軌專案清單
 app.MapGet("/api/projects/history", (DagOrchestrator orchestrator) =>
 {
@@ -521,10 +730,25 @@ app.MapGet("/api/projects/history", (DagOrchestrator orchestrator) =>
 });
 
 // 9. 載入指定歷史分軌專案完整資料進 DAW
-app.MapGet("/api/projects/{jobId}/load", (string jobId, DagOrchestrator orchestrator) =>
+app.MapGet("/api/projects/{jobId}/load", async (string jobId, DagOrchestrator orchestrator, CancellationToken ct) =>
 {
     var job = orchestrator.GetJobResult(jobId);
-    return job != null ? Results.Ok(job) : Results.NotFound(new { error = "找不到該歷史專案" });
+    if (job == null) return Results.NotFound(new { error = "找不到該歷史專案" });
+
+    if (job.DetectedBpm == null && File.Exists(job.SourceAudioPath))
+    {
+        try
+        {
+            double bpm = await orchestrator.CliRunner.DetectAudioBpmAsync(job.SourceAudioPath, ct);
+            job.DetectedBpm = bpm;
+            job.TargetBpm = bpm;
+            string bpmJsonPath = Path.Combine(projectsDir, jobId, "detected_bpm.json");
+            await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm }), ct);
+        }
+        catch { }
+    }
+
+    return Results.Ok(job);
 });
 
 // 9.5 刪除指定歷史分軌專案
@@ -532,6 +756,70 @@ app.MapDelete("/api/projects/{jobId}", (string jobId, DagOrchestrator orchestrat
 {
     bool success = orchestrator.DeleteProject(jobId);
     return success ? Results.Ok(new { success = true, jobId }) : Results.NotFound(new { error = "找不到或無法刪除該歷史專案" });
+});
+
+// 9.6 另存當前專案為獨立新專案 (自訂名稱 + 保留剪輯消音狀態)
+app.MapPost("/api/projects/{jobId}/save-as", async (
+    string jobId,
+    HttpRequest request,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    using var reader = new StreamReader(request.Body);
+    string body = await reader.ReadToEndAsync(ct);
+    string newProjectName = "";
+    string? trackStatesJson = null;
+
+    if (!string.IsNullOrWhiteSpace(body))
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("newProjectName", out var nameProp))
+            {
+                newProjectName = nameProp.GetString() ?? "";
+            }
+            if (doc.RootElement.TryGetProperty("trackStates", out var statesProp))
+            {
+                trackStatesJson = statesProp.GetRawText();
+            }
+        }
+        catch { }
+    }
+
+    if (string.IsNullOrWhiteSpace(newProjectName))
+    {
+        newProjectName = $"{jobId}_Copy";
+    }
+
+    var newJob = await orchestrator.SaveAsProjectAsync(jobId, newProjectName, trackStatesJson, ct);
+    if (newJob == null)
+    {
+        return Results.BadRequest(new { error = "無法另存專案，請確認來源專案是否存在" });
+    }
+
+    return Results.Ok(new
+    {
+        success = true,
+        jobId = newJob.JobId,
+        projectName = newJob.OriginalFileName,
+        job = newJob
+    });
+});
+
+// 9.7 保存當前專案編輯狀態 (剪輯、靜音與各軌參數)
+app.MapPost("/api/projects/{jobId}/save-state", async (
+    string jobId,
+    HttpRequest request,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    using var reader = new StreamReader(request.Body);
+    string body = await reader.ReadToEndAsync(ct);
+    if (string.IsNullOrWhiteSpace(body)) return Results.BadRequest();
+
+    bool ok = await orchestrator.SaveProjectStateAsync(jobId, body, ct);
+    return ok ? Results.Ok(new { success = true }) : Results.NotFound();
 });
 
 // 10. 針對已分離專案動態新增任意自訂樂器音軌 (如 flute / 長笛 / saxophone / 大提琴)

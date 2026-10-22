@@ -45,6 +45,18 @@ class StemForgeDawApp {
     this.selectedFileLabel = document.getElementById("selectedFileLabel");
     this.localPathInput = document.getElementById("localPathInput");
 
+    // 🎧 音源即時試聽播放器元件
+    this.audioPreviewCard = document.getElementById("audioPreviewCard");
+    this.previewFileName = document.getElementById("previewFileName");
+    this.previewTimeText = document.getElementById("previewTimeText");
+    this.btnPreviewPlay = document.getElementById("btnPreviewPlay");
+    this.previewScrubber = document.getElementById("previewScrubber");
+    this.previewVolume = document.getElementById("previewVolume");
+    this.previewMuteIcon = document.getElementById("previewMuteIcon");
+    this.previewAudioElement = document.getElementById("previewAudioElement");
+    this.currentPreviewUrl = null;
+    this.isPreviewScrubbing = false;
+
     this.btnStartSeparate = document.getElementById("btnStartSeparate");
     this.modeSelect = document.getElementById("separationModeSelect");
     this.dagTreeContainer = document.getElementById("dagTreeContainer");
@@ -64,6 +76,8 @@ class StemForgeDawApp {
 
     this.btnDownloadRpp = document.getElementById("btnDownloadRpp");
     this.btnExportZip = document.getElementById("btnExportZip");
+    this.btnSelectAllTracks = document.getElementById("btnSelectAllTracks");
+    this.btnClearAllTracks = document.getElementById("btnClearAllTracks");
     this.btnExportSelectedZip = document.getElementById("btnExportSelectedZip");
     this.selectedTracksCountText = document.getElementById("selectedTracksCountText");
     this.btnExportMixdownWav = document.getElementById("btnExportMixdownWav");
@@ -85,6 +99,88 @@ class StemForgeDawApp {
     this.pitchValueLabel = document.getElementById("pitchValueLabel");
     this.btnApplyPitch = document.getElementById("btnApplyPitch");
     this.btnResetPitch = document.getElementById("btnResetPitch");
+
+    // AI 時間軸拍速控制元件 (原速偵測 + BPM調整滑桿 + 點擊開始做 + 一鍵恢復)
+    this.detectedBpmBadge = document.getElementById("detectedBpmBadge");
+    this.targetBpmBadge = document.getElementById("targetBpmBadge");
+    this.tempoSlider = document.getElementById("tempoSlider");
+    this.btnTempoDown = document.getElementById("btnTempoDown");
+    this.btnTempoUp = document.getElementById("btnTempoUp");
+    this.tempoValueLabel = document.getElementById("tempoValueLabel");
+    this.btnApplyTempo = document.getElementById("btnApplyTempo");
+    this.btnResetTempo = document.getElementById("btnResetTempo");
+    this.originalBpm = 120;
+    this.currentBpm = 120;
+
+    // ✂️ 編曲剪輯工具箱 (Pointer, Scissors, Mute)
+    this.currentTool = "pointer"; // "pointer" | "scissors" | "mute"
+    this.btnToolPointer = document.getElementById("btnToolPointer");
+    this.btnToolScissors = document.getElementById("btnToolScissors");
+    this.btnToolMute = document.getElementById("btnToolMute");
+    this.btnResetClips = document.getElementById("btnResetClips");
+
+    if (this.btnToolPointer) {
+      this.btnToolPointer.addEventListener("click", () => this.setToolMode("pointer"));
+    }
+    if (this.btnToolScissors) {
+      this.btnToolScissors.addEventListener("click", () => this.setToolMode("scissors"));
+    }
+    if (this.btnToolMute) {
+      this.btnToolMute.addEventListener("click", () => this.setToolMode("mute"));
+    }
+    if (this.btnResetClips) {
+      this.btnResetClips.addEventListener("click", () => this.resetAllClips());
+    }
+
+    // 鍵盤快速鍵：1(選取), 2(剪刀), 3(消音), Ctrl+S(儲存)
+    window.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        this.saveCurrentProject();
+        return;
+      }
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.key === "1") this.setToolMode("pointer");
+      else if (e.key === "2") this.setToolMode("scissors");
+      else if (e.key === "3") this.setToolMode("mute");
+    });
+
+    // 💾 儲存與另存專案元件綁定
+    this.btnSaveProject = document.getElementById("btnSaveProject");
+    if (this.btnSaveProject) {
+      this.btnSaveProject.addEventListener("click", () => this.saveCurrentProject());
+    }
+
+    this.btnSaveAsProject = document.getElementById("btnSaveAsProject");
+    this.saveAsModal = document.getElementById("saveAsModal");
+    this.btnCloseSaveAs = document.getElementById("btnCloseSaveAs");
+    this.btnCancelSaveAs = document.getElementById("btnCancelSaveAs");
+    this.btnConfirmSaveAs = document.getElementById("btnConfirmSaveAs");
+    this.saveAsProjectNameInput = document.getElementById("saveAsProjectNameInput");
+
+    if (this.btnSaveAsProject) {
+      this.btnSaveAsProject.addEventListener("click", () => this.openSaveAsModal());
+    }
+    if (this.btnCloseSaveAs) {
+      this.btnCloseSaveAs.addEventListener("click", () => this.closeSaveAsModal());
+    }
+    if (this.btnCancelSaveAs) {
+      this.btnCancelSaveAs.addEventListener("click", () => this.closeSaveAsModal());
+    }
+    if (this.saveAsModal) {
+      this.saveAsModal.addEventListener("click", (e) => {
+        if (e.target === this.saveAsModal) this.closeSaveAsModal();
+      });
+    }
+    if (this.btnConfirmSaveAs) {
+      this.btnConfirmSaveAs.addEventListener("click", () => this.executeSaveAsProject());
+    }
+    if (this.saveAsProjectNameInput) {
+      this.saveAsProjectNameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") this.executeSaveAsProject();
+        else if (e.key === "Escape") this.closeSaveAsModal();
+      });
+    }
 
     // 處理中半透明變暗遮罩元件 (Busy Overlay)
     this.busyOverlay = document.getElementById("mixerBusyOverlay");
@@ -120,6 +216,30 @@ class StemForgeDawApp {
       });
     }
 
+    if (this.tempoSlider) {
+      this.tempoSlider.addEventListener("input", (e) => this.updateTempoUiOnly(parseInt(e.target.value, 10)));
+      this.tempoSlider.addEventListener("change", (e) => this.updateTempoUiOnly(parseInt(e.target.value, 10)));
+    }
+    if (this.btnTempoDown) {
+      this.btnTempoDown.addEventListener("click", () => this.stepTempoUi(-1));
+    }
+    if (this.btnTempoUp) {
+      this.btnTempoUp.addEventListener("click", () => this.stepTempoUi(1));
+    }
+    if (this.btnApplyTempo) {
+      this.btnApplyTempo.addEventListener("click", () => {
+        const val = parseInt(this.tempoSlider.value, 10) || this.originalBpm || 120;
+        this.applyTempoShift(val);
+      });
+    }
+    if (this.btnResetTempo) {
+      this.btnResetTempo.addEventListener("click", () => {
+        if (this.tempoSlider) this.tempoSlider.value = this.originalBpm || 120;
+        this.updateTempoUiOnly(this.originalBpm || 120);
+        this.applyTempoShift(this.originalBpm || 120);
+      });
+    }
+
     if (this.btnExportSelectedZip) {
       this.btnExportSelectedZip.addEventListener("click", () => this.exportSelectedZip());
     }
@@ -128,6 +248,13 @@ class StemForgeDawApp {
     }
     if (this.btnExportMixdownMp3) {
       this.btnExportMixdownMp3.addEventListener("click", () => this.exportMixdown("mp3"));
+    }
+
+    if (this.btnSelectAllTracks) {
+      this.btnSelectAllTracks.addEventListener("click", () => this.selectAllTracks(true));
+    }
+    if (this.btnClearAllTracks) {
+      this.btnClearAllTracks.addEventListener("click", () => this.selectAllTracks(false));
     }
 
     if (this.btnOpenHistory) {
@@ -148,6 +275,8 @@ class StemForgeDawApp {
       if (e.target.files.length > 0) {
         this.selectedFile = e.target.files[0];
         this.selectedFileLabel.textContent = `已選擇: ${this.selectedFile.name} (${(this.selectedFile.size / 1048576).toFixed(2)} MB)`;
+        const url = URL.createObjectURL(this.selectedFile);
+        this.loadSourcePreview(url, this.selectedFile.name);
       }
     });
 
@@ -164,8 +293,27 @@ class StemForgeDawApp {
       if (e.dataTransfer.files.length > 0) {
         this.selectedFile = e.dataTransfer.files[0];
         this.selectedFileLabel.textContent = `已選擇: ${this.selectedFile.name} (${(this.selectedFile.size / 1048576).toFixed(2)} MB)`;
+        const url = URL.createObjectURL(this.selectedFile);
+        this.loadSourcePreview(url, this.selectedFile.name);
       }
     });
+
+    // 監聽本機路徑輸入框
+    if (this.localPathInput) {
+      const handleLocalPath = () => {
+        const raw = this.localPathInput.value.trim();
+        const p = raw.replace(/^["'](.*)["']$/, "$1").trim();
+        if (p) {
+          const fileName = p.split(/[\\/]/).pop() || p;
+          const url = `/api/preview/local-file?path=${encodeURIComponent(p)}&t=${Date.now()}`;
+          this.loadSourcePreview(url, fileName);
+        }
+      };
+      this.localPathInput.addEventListener("change", handleLocalPath);
+      this.localPathInput.addEventListener("blur", handleLocalPath);
+    }
+
+    this.initSourcePreviewEvents();
 
     // Presets
     document.querySelectorAll(".preset-btns .btn-xs[data-preset]").forEach((btn) => {
@@ -455,6 +603,7 @@ class StemForgeDawApp {
     }
 
     this.stopPlayback();
+    this.stopSourcePreview();
     this.btnStartSeparate.disabled = true;
     this.showBusyOverlay("⚡ AI 深度神經分軌中...", "RTX 4050 級聯模型分離運算中...", 0, "🎛️");
 
@@ -540,11 +689,36 @@ class StemForgeDawApp {
       this.targetKeyBadge.textContent = "目標: 原調 (0)";
     }
 
+    const bpmVal = jobResult.detectedBpm ? Math.round(jobResult.detectedBpm) : 120;
+    this.originalBpm = bpmVal;
+    this.currentBpm = bpmVal;
+
+    if (this.detectedBpmBadge) {
+      this.detectedBpmBadge.textContent = `原速: ${bpmVal} BPM`;
+    }
+    if (this.targetBpmBadge) {
+      this.targetBpmBadge.textContent = "目標: 原速";
+    }
+    if (this.tempoSlider) {
+      const minBpm = Math.max(40, Math.round(bpmVal * 0.6));
+      const maxBpm = Math.min(260, Math.round(bpmVal * 1.5));
+      this.tempoSlider.min = minBpm;
+      this.tempoSlider.max = maxBpm;
+      this.tempoSlider.value = bpmVal;
+    }
+    if (this.tempoValueLabel) {
+      this.tempoValueLabel.textContent = `${bpmVal} BPM`;
+    }
+
     if (jobResult.reaperRppUrl) {
       this.btnDownloadRpp.href = jobResult.reaperRppUrl;
       this.btnDownloadRpp.classList.remove("disabled");
     }
     this.btnExportZip.disabled = false;
+    if (this.btnSaveProject) this.btnSaveProject.disabled = false;
+    if (this.btnSaveAsProject) this.btnSaveAsProject.disabled = false;
+    if (this.btnSelectAllTracks) this.btnSelectAllTracks.disabled = false;
+    if (this.btnClearAllTracks) this.btnClearAllTracks.disabled = false;
     this.checkedNodeIds = new Set();
 
     this.mixerTracksContainer.innerHTML = `<div class="empty-mixer-state">正在將 ${jobResult.stems.length} 條 32-bit Float 音軌解碼載入 WebAudio 同步緩衝區...</div>`;
@@ -567,6 +741,19 @@ class StemForgeDawApp {
       })
     );
 
+    // 解析專案儲存狀態 (project_state.json)
+    let projectState = null;
+    if (jobResult.projectState) {
+      projectState = jobResult.projectState;
+    } else if (jobResult.projectStateJson) {
+      try {
+        projectState = typeof jobResult.projectStateJson === "string"
+          ? JSON.parse(jobResult.projectStateJson)
+          : jobResult.projectStateJson;
+      } catch { }
+    }
+    this.currentJob.projectState = projectState;
+
     this.mixerTracksContainer.innerHTML = "";
 
     for (const { stem, audioBuffer } of decodedStems) {
@@ -576,24 +763,50 @@ class StemForgeDawApp {
       gainNode.connect(this.masterGainNode);
 
       const isResidual = stem.nodeId.startsWith("STEM_19_RESIDUAL");
+      const savedState = projectState?.trackStates?.[stem.nodeId];
+
+      let initialRegions = [{
+        id: 1,
+        startSec: 0,
+        endSec: this.durationSec,
+        muted: false
+      }];
+      let nextRegId = 2;
+
+      if (savedState && Array.isArray(savedState.regions) && savedState.regions.length > 0) {
+        initialRegions = savedState.regions.map(r => ({
+          id: r.id || 1,
+          startSec: Number(r.startSec) || 0,
+          endSec: Number(r.endSec) || this.durationSec,
+          muted: !!r.muted
+        }));
+        nextRegId = initialRegions.reduce((m, r) => Math.max(m, r.id || 1), 1) + 1;
+      }
+
       const trackObj = {
         nodeId: stem.nodeId,
         meta: stem,
         audioBuffer,
         gainNode,
         panNode,
-        solo: false,
-        mute: isResidual,
-        invertPhase: false,
-        volume: 1.0,
-        pan: 0.0,
+        solo: savedState ? !!savedState.solo : false,
+        mute: savedState ? !!savedState.mute : isResidual,
+        invertPhase: savedState ? !!savedState.invertPhase : false,
+        volume: savedState && typeof savedState.volume === "number" ? savedState.volume : 1.0,
+        pan: savedState && typeof savedState.pan === "number" ? savedState.pan : 0.0,
         rowEl: null,
         canvas: null,
-        playheadEl: null
+        playheadEl: null,
+        regions: initialRegions,
+        nextRegionId: nextRegId,
+        regionsOverlayEl: null,
+        scissorLineEl: null,
+        scissorLabelEl: null
       };
 
       this.tracks.push(trackObj);
       this.renderTrackStrip(trackObj);
+      this.renderTrackRegions(trackObj);
     }
 
     this.updateTrackGains();
@@ -631,16 +844,20 @@ class StemForgeDawApp {
         </div>
       </div>
       <div class="track-controls">
-        <button class="m-btn solo" title="Solo 獨奏此軌">S</button>
+        <button class="m-btn solo ${track.solo ? "active" : ""}" title="Solo 獨奏此軌">S</button>
         <button class="m-btn mute ${track.mute ? "active" : ""}" title="Mute 靜音此軌">M</button>
-        <button class="m-btn invert" title="Phase Invert 180° 反相">Ø</button>
+        <button class="m-btn invert ${track.invertPhase ? "active" : ""}" title="Phase Invert 180° 反相">Ø</button>
         <div class="fader-wrap">
-          <input type="range" class="vol-slider" min="0" max="1.5" step="0.01" value="1.0" title="音量推子 (Volume)" />
-          <input type="range" class="pan-slider" min="-1" max="1" step="0.05" value="0" title="立體聲 Pan (L/R)" />
+          <input type="range" class="vol-slider" min="0" max="1.5" step="0.01" value="${track.volume ?? 1.0}" title="音量推子 (Volume)" />
+          <input type="range" class="pan-slider" min="-1" max="1" step="0.05" value="${track.pan ?? 0.0}" title="立體聲 Pan (L/R)" />
         </div>
       </div>
       <div class="track-waveform-wrap">
         <canvas class="track-waveform-canvas" height="58"></canvas>
+        <div class="track-regions-overlay"></div>
+        <div class="scissor-indicator-line">
+          <span class="scissor-indicator-label">✂️ 00:00.000</span>
+        </div>
         <div class="track-playhead" style="left:0%"></div>
       </div>
       <div class="track-actions">
@@ -658,9 +875,15 @@ class StemForgeDawApp {
     const wfWrap = row.querySelector(".track-waveform-wrap");
     const canvas = row.querySelector(".track-waveform-canvas");
     const btnMidi = row.querySelector(".btn-midi");
+    const regionsOverlay = row.querySelector(".track-regions-overlay");
+    const scissorLine = row.querySelector(".scissor-indicator-line");
+    const scissorLabel = row.querySelector(".scissor-indicator-label");
 
     track.canvas = canvas;
     track.playheadEl = row.querySelector(".track-playhead");
+    track.regionsOverlayEl = regionsOverlay;
+    track.scissorLineEl = scissorLine;
+    track.scissorLabelEl = scissorLabel;
 
     // 預設全勾選
     this.checkedNodeIds.add(track.nodeId);
@@ -703,11 +926,45 @@ class StemForgeDawApp {
       track.panNode.pan.value = track.pan;
     });
 
-    wfWrap.addEventListener("click", (e) => {
-      const rect = wfWrap.getBoundingClientRect();
-      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      this.seekTo(ratio * this.durationSec);
+    wfWrap.addEventListener("mousemove", (e) => {
+      if (this.currentTool === "scissors") {
+        const rect = wfWrap.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        const pct = (x / rect.width) * 100;
+        const curSec = (x / rect.width) * this.durationSec;
+        scissorLine.style.display = "block";
+        scissorLine.style.left = `${pct}%`;
+        scissorLabel.textContent = `✂️ ${this.formatTime(curSec)}`;
+      } else {
+        scissorLine.style.display = "none";
+      }
     });
+
+    wfWrap.addEventListener("mouseleave", () => {
+      scissorLine.style.display = "none";
+    });
+
+    wfWrap.addEventListener("click", (e) => {
+      if (e.target.closest(".clip-action-pill")) return;
+
+      const rect = wfWrap.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+      const clickRatio = x / rect.width;
+      const clickSec = clickRatio * this.durationSec;
+
+      if (this.currentTool === "scissors") {
+        this.splitTrackRegion(track, clickSec);
+      } else if (this.currentTool === "mute") {
+        const reg = track.regions ? track.regions.find((r) => r.startSec <= clickSec && clickSec <= r.endSec) : null;
+        if (reg) {
+          this.toggleRegionMute(track, reg.id);
+        }
+      } else {
+        this.seekTo(clickSec);
+      }
+    });
+
+    this.renderTrackRegions(track);
 
     btnMidi.addEventListener("click", async () => {
       btnMidi.textContent = "⏳...";
@@ -795,11 +1052,19 @@ class StemForgeDawApp {
 
   updateTrackGains() {
     const anySolo = this.tracks.some((t) => t.solo && !t.hiddenByTree);
+    const curTime = this.audioCtx ? this.audioCtx.currentTime : 0;
+    const curPos = this.getCurrentTimeSec();
+
     for (const t of this.tracks) {
       const isAudible = !t.hiddenByTree && (anySolo ? t.solo && !t.mute : !t.mute);
       const sign = t.invertPhase ? -1.0 : 1.0;
-      t.gainNode.gain.value = isAudible ? t.volume * sign : 0.0;
       t.rowEl.classList.toggle("muted-effective", !isAudible);
+
+      if (this.isPlaying) {
+        this.scheduleTrackRegionGains(t, curTime, curPos);
+      } else {
+        t.gainNode.gain.value = isAudible ? t.volume * sign : 0.0;
+      }
     }
   }
 
@@ -860,6 +1125,7 @@ class StemForgeDawApp {
       src.connect(t.panNode);
       src.start(syncStartAt, offset);
       this.activeSources.push(src);
+      this.scheduleTrackRegionGains(t, syncStartAt, offset);
     }
 
     if (this.originalMixBuffer) {
@@ -952,6 +1218,10 @@ class StemForgeDawApp {
     }
   }
 
+  updatePlayheadPosition(sec) {
+    this.updatePlayheadUi(sec);
+  }
+
   updateCheckedTracksCount() {
     const count = this.checkedNodeIds ? this.checkedNodeIds.size : 0;
     if (this.selectedTracksCountText) {
@@ -976,6 +1246,28 @@ class StemForgeDawApp {
     }
   }
 
+  selectAllTracks(isSelected) {
+    if (!this.tracks || this.tracks.length === 0) return;
+    if (isSelected) {
+      for (const t of this.tracks) {
+        this.checkedNodeIds.add(t.nodeId);
+        if (t.rowEl) {
+          const chk = t.rowEl.querySelector(".track-select-chk");
+          if (chk) chk.checked = true;
+        }
+      }
+    } else {
+      this.checkedNodeIds.clear();
+      for (const t of this.tracks) {
+        if (t.rowEl) {
+          const chk = t.rowEl.querySelector(".track-select-chk");
+          if (chk) chk.checked = false;
+        }
+      }
+    }
+    this.updateCheckedTracksCount();
+  }
+
   async exportMixdown(format = "wav") {
     if (!this.currentJob || this.checkedNodeIds.size === 0) return;
     const isMp3 = format === "mp3";
@@ -994,9 +1286,19 @@ class StemForgeDawApp {
     );
 
     try {
+      const mutedRanges = {};
+      for (const t of this.tracks) {
+        if (t.regions) {
+          const mList = t.regions.filter((r) => r.muted).map((r) => ({ startSec: r.startSec, endSec: r.endSec }));
+          if (mList.length > 0) {
+            mutedRanges[t.nodeId] = mList;
+          }
+        }
+      }
       const payload = {
         selectedNodes: Array.from(this.checkedNodeIds),
-        format: format
+        format: format,
+        mutedRanges: mutedRanges
       };
       const r = await fetch(`/api/jobs/${this.currentJob.jobId}/mixdown`, {
         method: "POST",
@@ -1042,6 +1344,10 @@ class StemForgeDawApp {
     } finally {
       this.hideBusyOverlay();
       this.btnExportZip.disabled = false;
+    if (this.btnSaveProject) this.btnSaveProject.disabled = false;
+    if (this.btnSaveAsProject) this.btnSaveAsProject.disabled = false;
+    if (this.btnSelectAllTracks) this.btnSelectAllTracks.disabled = false;
+    if (this.btnClearAllTracks) this.btnClearAllTracks.disabled = false;
       this.btnExportZip.textContent = "📦 打包全軌 ZIP";
     }
   }
@@ -1075,6 +1381,11 @@ class StemForgeDawApp {
   async openHistoryModal() {
     if (!this.historyModal) return;
     this.historyModal.classList.add("active");
+    await this.renderHistoryList();
+  }
+
+  async renderHistoryList() {
+    if (!this.historyListContainer) return;
     this.historyListContainer.innerHTML = `<div class="empty-history-text" style="padding: 20px; text-align: center; color: #94a3b8;">正在掃描本機已處理的專案...</div>`;
 
     try {
@@ -1279,13 +1590,602 @@ class StemForgeDawApp {
     }
   }
 
+  stepTempoUi(delta) {
+    if (!this.tempoSlider) return;
+    const cur = parseInt(this.tempoSlider.value, 10) || this.originalBpm || 120;
+    const minVal = parseInt(this.tempoSlider.min, 10) || 40;
+    const maxVal = parseInt(this.tempoSlider.max, 10) || 260;
+    const next = Math.max(minVal, Math.min(maxVal, cur + delta));
+    if (next !== cur) {
+      this.tempoSlider.value = next;
+      this.updateTempoUiOnly(next);
+    }
+  }
+
+  updateTempoUiOnly(targetBpm) {
+    const origBpm = this.originalBpm || 120;
+    this.currentBpm = targetBpm;
+    const ratio = targetBpm / origBpm;
+    const pctDiff = ((ratio - 1.0) * 100).toFixed(1);
+    const sign = pctDiff > 0 ? "+" : "";
+
+    if (this.tempoValueLabel) {
+      this.tempoValueLabel.textContent = `${targetBpm} BPM`;
+    }
+    if (this.targetBpmBadge) {
+      if (Math.abs(ratio - 1.0) < 0.005) {
+        this.targetBpmBadge.textContent = "目標: 原速";
+      } else {
+        this.targetBpmBadge.textContent = `目標: ${targetBpm} BPM (${sign}${pctDiff}%)`;
+      }
+    }
+  }
+
+  async applyTempoShift(targetBpm) {
+    if (!this.currentJob) return;
+    const origBpm = this.originalBpm || 120;
+    targetBpm = Math.max(40, Math.min(260, targetBpm));
+    if (this.tempoSlider) this.tempoSlider.value = targetBpm;
+    this.updateTempoUiOnly(targetBpm);
+
+    const ratio = targetBpm / origBpm;
+    const isReset = Math.abs(ratio - 1.0) < 0.005;
+
+    const wasPlaying = this.isPlaying;
+    const curPos = this.getCurrentTimeSec();
+    this.pausePlayback();
+
+    const bannerStage = document.getElementById("progressStageTag");
+    const bannerTitle = document.getElementById("progressTitleText");
+    const bannerSub = document.getElementById("progressSubText");
+
+    const pctDiff = ((ratio - 1.0) * 100).toFixed(1);
+    const signText = pctDiff > 0 ? `+${pctDiff}%` : `${pctDiff}%`;
+
+    if (bannerStage) bannerStage.textContent = "TIME STRETCH";
+    if (bannerTitle) bannerTitle.textContent = `[Phase-Vocoder] 正在執行 21 軌無損時間軸變速 (${targetBpm} BPM / ${signText})...`;
+    if (bannerSub) bannerSub.textContent = "所有分軌（含鼓組）等比例縮放時間軸，音高 100% 鎖定不動，零頻率失真";
+
+    if (this.btnApplyTempo) {
+      this.btnApplyTempo.disabled = true;
+      this.btnApplyTempo.textContent = "⏳ 變速中...";
+    }
+
+    const overlayTitle = isReset
+      ? "⟲ 正在恢復原始拍速..."
+      : `⚡ 正在進行 21 軌無損時間軸變速 (${targetBpm} BPM / ${signText})...`;
+    const overlaySub = isReset
+      ? "正在重新載入與解碼原始音訊軌道..."
+      : "所有軌道（含鼓組）等比例縮放時間軸，音高 100% 鎖定不動...";
+
+    this.showBusyOverlay(overlayTitle, overlaySub, 5, "⏱️");
+
+    try {
+      const res = await fetch(`/api/jobs/${this.currentJob.jobId}/time-stretch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetBpm, tempoRatio: ratio })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "變速失敗");
+
+      this.updateBusyOverlayProgress(85, "正在更新混音台音訊...", "載入最新音軌緩衝區並重新計算時間軸長度...");
+
+      if (this.targetBpmBadge) {
+        this.targetBpmBadge.textContent = isReset ? "目標: 原速" : `目標: ${targetBpm} BPM (${signText})`;
+      }
+
+      // 平行重新解碼變速後的各軌音訊並更新下載連結
+      await Promise.all(
+        data.stems.map(async (stem) => {
+          const track = this.tracks.find((t) => t.nodeId === stem.nodeId);
+          if (track) {
+            track.meta.relativeUrl = stem.relativeUrl;
+            const link = track.rowEl?.querySelector("a.act-link");
+            if (link) link.href = stem.relativeUrl;
+            const r = await fetch(`${stem.relativeUrl}?t=${Date.now()}`);
+            const buf = await r.arrayBuffer();
+            track.audioBuffer = await this.audioCtx.decodeAudioData(buf);
+          }
+        })
+      );
+
+      // 重新計算歌曲總時長 (變速後長度改變)
+      let maxDur = 0;
+      for (const t of this.tracks) {
+        if (t.audioBuffer && t.audioBuffer.duration > maxDur) {
+          maxDur = t.audioBuffer.duration;
+        }
+      }
+      if (maxDur > 0) {
+        this.durationSec = maxDur;
+        const totalTimeEl = document.getElementById("totalTimeText");
+        if (totalTimeEl) totalTimeEl.textContent = this.formatTime(this.durationSec);
+      }
+
+      // 重新繪製 21 軌波形 Canvas (因為時間長度已自適應改變)
+      for (const track of this.tracks) {
+        this.drawWaveform(track);
+      }
+
+      if (bannerStage) bannerStage.textContent = "READY";
+      if (bannerTitle) bannerTitle.textContent = `拍速調整完成！當前拍速: ${targetBpm} BPM`;
+      if (bannerSub) bannerSub.textContent = "可隨時拉動滑桿或點擊「⟲ 恢復原速」即時切換";
+
+      // 縮放播放頭位置以保持在歌曲相對位置
+      const newPos = isReset ? curPos : curPos / ratio;
+      this.pauseOffsetSec = Math.min(newPos, this.durationSec);
+      this.updatePlayheadUi(this.pauseOffsetSec);
+
+      if (wasPlaying) {
+        this.startPlayback();
+      }
+    } catch (err) {
+      alert(`變速失敗: ${err.message}`);
+    } finally {
+      this.hideBusyOverlay();
+      if (this.btnApplyTempo) {
+        this.btnApplyTempo.disabled = false;
+        this.btnApplyTempo.textContent = "⚡ 套用新拍速";
+      }
+    }
+  }
+
+  // ============================================================
+  // ✂️ 編曲剪輯與片段管理 (Arrangement Clip & Region Management)
+  // ============================================================
+  setToolMode(mode) {
+    this.currentTool = mode;
+    document.body.classList.remove("tool-mode-scissors", "tool-mode-mute");
+    if (mode === "scissors") document.body.classList.add("tool-mode-scissors");
+    if (mode === "mute") document.body.classList.add("tool-mode-mute");
+
+    if (this.btnToolPointer) this.btnToolPointer.classList.toggle("active", mode === "pointer");
+    if (this.btnToolScissors) this.btnToolScissors.classList.toggle("active", mode === "scissors");
+    if (this.btnToolMute) this.btnToolMute.classList.toggle("active", mode === "mute");
+  }
+
+  splitTrackRegion(track, splitSec) {
+    if (!track.regions || splitSec <= 0.1 || splitSec >= this.durationSec - 0.1) return;
+    const targetIdx = track.regions.findIndex((r) => r.startSec < splitSec && splitSec < r.endSec);
+    if (targetIdx < 0) return;
+
+    const r = track.regions[targetIdx];
+    if (splitSec - r.startSec < 0.08 || r.endSec - splitSec < 0.08) return;
+
+    const r1 = {
+      id: track.nextRegionId++,
+      startSec: r.startSec,
+      endSec: splitSec,
+      muted: r.muted
+    };
+    const r2 = {
+      id: track.nextRegionId++,
+      startSec: splitSec,
+      endSec: r.endSec,
+      muted: r.muted
+    };
+
+    track.regions.splice(targetIdx, 1, r1, r2);
+    this.renderTrackRegions(track);
+
+    if (this.isPlaying) {
+      this.scheduleTrackRegionGains(track, this.audioCtx.currentTime, this.getCurrentTimeSec());
+    }
+  }
+
+  toggleRegionMute(track, regionId) {
+    const reg = track.regions ? track.regions.find((r) => r.id === regionId) : null;
+    if (!reg) return;
+    reg.muted = !reg.muted;
+    this.renderTrackRegions(track);
+
+    if (this.isPlaying) {
+      this.scheduleTrackRegionGains(track, this.audioCtx.currentTime, this.getCurrentTimeSec());
+    }
+  }
+
+  deleteTrackRegion(track, regionId) {
+    const reg = track.regions ? track.regions.find((r) => r.id === regionId) : null;
+    if (!reg) return;
+    reg.muted = true;
+    this.renderTrackRegions(track);
+
+    if (this.isPlaying) {
+      this.scheduleTrackRegionGains(track, this.audioCtx.currentTime, this.getCurrentTimeSec());
+    }
+  }
+
+  renderTrackRegions(track) {
+    if (!track.regionsOverlayEl) return;
+    track.regionsOverlayEl.innerHTML = "";
+    const totalDur = this.durationSec > 0 ? this.durationSec : 1.0;
+
+    for (const r of track.regions) {
+      const leftPct = (r.startSec / totalDur) * 100;
+      const widthPct = ((r.endSec - r.startSec) / totalDur) * 100;
+
+      const el = document.createElement("div");
+      el.className = `clip-region ${r.muted ? "clip-muted" : ""}`;
+      el.style.left = `${leftPct}%`;
+      el.style.width = `${widthPct}%`;
+
+      let inner = "";
+      if (r.muted) {
+        inner += `<div class="clip-badge-mute">🔇 MUTED</div>`;
+      }
+
+      inner += `
+        <div class="clip-action-pill">
+          <button class="clip-pill-btn btn-clip-toggle-mute" title="${r.muted ? "取消消音" : "消音此段"}">${r.muted ? "🔊" : "🔇"}</button>
+          <button class="clip-pill-btn btn-clip-del" title="刪除此段">🗑️</button>
+        </div>
+      `;
+
+      el.innerHTML = inner;
+
+      const btnToggleMute = el.querySelector(".btn-clip-toggle-mute");
+      const btnDel = el.querySelector(".btn-clip-del");
+
+      if (btnToggleMute) {
+        btnToggleMute.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.toggleRegionMute(track, r.id);
+        });
+      }
+      if (btnDel) {
+        btnDel.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.deleteTrackRegion(track, r.id);
+        });
+      }
+
+      track.regionsOverlayEl.appendChild(el);
+    }
+  }
+
+  resetAllClips() {
+    for (const t of this.tracks) {
+      t.regions = [{
+        id: 1,
+        startSec: 0,
+        endSec: this.durationSec,
+        muted: false
+      }];
+      t.nextRegionId = 2;
+      this.renderTrackRegions(t);
+      if (this.isPlaying) {
+        this.scheduleTrackRegionGains(t, this.audioCtx.currentTime, this.getCurrentTimeSec());
+      }
+    }
+  }
+
+  scheduleTrackRegionGains(t, syncStartAt, offset) {
+    if (!t.regions || t.regions.length === 0 || !t.gainNode) return;
+    const anySolo = this.tracks.some((x) => x.solo && !x.hiddenByTree);
+    const isAudible = !t.hiddenByTree && (anySolo ? t.solo && !t.mute : !t.mute);
+    const sign = t.invertPhase ? -1.0 : 1.0;
+    const baseGain = isAudible ? t.volume * sign : 0.0;
+
+    const param = t.gainNode.gain;
+    param.cancelScheduledValues(syncStartAt);
+
+    let currentRegionMuted = false;
+    for (const r of t.regions) {
+      if (r.startSec <= offset && offset < r.endSec) {
+        currentRegionMuted = r.muted;
+        break;
+      }
+    }
+    const initialGain = currentRegionMuted ? 0.0 : baseGain;
+    param.setValueAtTime(initialGain, syncStartAt);
+
+    for (const r of t.regions) {
+      if (r.endSec <= offset) continue;
+
+      const regionStartCtx = syncStartAt + Math.max(0, r.startSec - offset);
+      const regionEndCtx = syncStartAt + Math.max(0, r.endSec - offset);
+
+      const targetVal = r.muted ? 0.0 : baseGain;
+
+      if (r.startSec > offset) {
+        param.setValueAtTime(param.value, regionStartCtx);
+        param.linearRampToValueAtTime(targetVal, regionStartCtx + 0.003);
+      }
+      if (r.muted && r.endSec > offset) {
+        param.setValueAtTime(0.0, regionEndCtx);
+        param.linearRampToValueAtTime(baseGain, regionEndCtx + 0.003);
+      }
+    }
+  }
+
+  // ============================================================
+  // 💾 另存專案 (Save Project As)
+  // ============================================================
+  openSaveAsModal() {
+    if (!this.currentJob) {
+      alert("請先載入或上傳一個分軌專案！");
+      return;
+    }
+    const baseName = this.currentJob.originalFileName || this.currentJob.jobId || "專案";
+    const defaultName = `${baseName} (修剪副本)`;
+    if (this.saveAsProjectNameInput) {
+      this.saveAsProjectNameInput.value = defaultName;
+    }
+    if (this.saveAsModal) {
+      this.saveAsModal.classList.add("active");
+    }
+    setTimeout(() => {
+      if (this.saveAsProjectNameInput) {
+        this.saveAsProjectNameInput.focus();
+        this.saveAsProjectNameInput.select();
+      }
+    }, 100);
+  }
+
+  closeSaveAsModal() {
+    if (this.saveAsModal) {
+      this.saveAsModal.classList.remove("active");
+    }
+  }
+
+  collectTrackStates() {
+    const trackStates = {};
+    for (const t of this.tracks) {
+      trackStates[t.nodeId] = {
+        regions: (t.regions || []).map((r) => ({
+          id: r.id,
+          startSec: Number(r.startSec.toFixed(3)),
+          endSec: Number(r.endSec.toFixed(3)),
+          muted: !!r.muted
+        })),
+        volume: t.volume,
+        pan: t.pan,
+        mute: !!t.mute,
+        solo: !!t.solo,
+        invertPhase: !!t.invertPhase
+      };
+    }
+    return {
+      updatedAt: new Date().toISOString(),
+      trackStates
+    };
+  }
+
+  async saveCurrentProject() {
+    if (!this.currentJob) return;
+    const btn = this.btnSaveProject;
+    const oldText = btn ? btn.textContent : "💾 儲存專案";
+    if (btn) {
+      btn.textContent = "⏳ 儲存中...";
+      btn.disabled = true;
+    }
+
+    try {
+      const currentTrackStates = this.collectTrackStates();
+      const resp = await fetch(`/api/projects/${this.currentJob.jobId}/save-state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentTrackStates)
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) throw new Error("儲存失敗");
+
+      this.currentJob.projectState = currentTrackStates;
+      if (btn) {
+        btn.textContent = "✅ 已儲存";
+        setTimeout(() => {
+          btn.textContent = "💾 儲存專案";
+          btn.disabled = false;
+        }, 1200);
+      }
+    } catch (err) {
+      alert("儲存專案失敗: " + err.message);
+      if (btn) {
+        btn.textContent = oldText;
+        btn.disabled = false;
+      }
+    }
+  }
+
+  async executeSaveAsProject() {
+    if (!this.currentJob) return;
+    const inputName = this.saveAsProjectNameInput ? this.saveAsProjectNameInput.value.trim() : "";
+    const newProjectName = inputName || `${this.currentJob.originalFileName || "專案"}_副本`;
+
+    this.closeSaveAsModal();
+    this.showBusyOverlay(
+      "💾 正在另存新專案...",
+      `正在建立完整工程副本（含消音與剪輯狀態）：[${newProjectName}]...`,
+      40,
+      "💾"
+    );
+
+    try {
+      const currentTrackStates = this.collectTrackStates();
+      const resp = await fetch(`/api/projects/${this.currentJob.jobId}/save-as`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newProjectName,
+          trackStates: currentTrackStates
+        })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.success || !data.job) {
+        throw new Error(data.error || "另存專案失敗");
+      }
+
+      this.updateBusyOverlayProgress(85, "切換至新專案...", `已成功建立 [${data.projectName}]`);
+      
+      // 切換至新專案 (保留剪輯狀態)
+      this.currentJob = data.job;
+      this.currentJob.projectState = currentTrackStates;
+
+      // 更新進度條與頂部標題
+      if (this.progressTitleText) {
+        this.progressTitleText.textContent = `當前專案: ${data.projectName} (ID: ${data.jobId})`;
+      }
+
+      // 重新整理歷史紀錄列表
+      if (typeof this.renderHistoryList === "function") {
+        await this.renderHistoryList();
+      }
+
+      await new Promise(r => setTimeout(r, 400));
+      alert(`✅ 專案已成功另存為：\n【${data.projectName}】\n\n所有剪輯消音片段已 100% 寫入磁碟並持久保存！\n歷史紀錄列表已同步更新。`);
+    } catch (err) {
+      alert("另存專案失敗: " + err.message);
+    } finally {
+      this.hideBusyOverlay();
+    }
+  }
+
   formatTime(sec) {
     const mins = Math.floor(sec / 60);
     const rem = sec % 60;
     return `${String(mins).padStart(2, "0")}:${rem.toFixed(3).padStart(6, "0")}`;
   }
+
+  // ============================================================
+  // 🎧 音源即時試聽播放器 (Pre-listen Player)
+  // ============================================================
+  initSourcePreviewEvents() {
+    if (!this.previewAudioElement) return;
+
+    if (this.btnPreviewPlay) {
+      this.btnPreviewPlay.addEventListener("click", () => {
+        if (this.previewAudioElement.paused) {
+          if (this.isPlaying) this.pausePlayback();
+          this.previewAudioElement.play().catch(err => {
+            console.warn("試聽播放被瀏覽器限制或格式錯誤:", err);
+          });
+        } else {
+          this.previewAudioElement.pause();
+        }
+      });
+    }
+
+    this.previewAudioElement.addEventListener("play", () => {
+      if (this.btnPreviewPlay) {
+        this.btnPreviewPlay.textContent = "⏸ 暫停";
+        this.btnPreviewPlay.classList.add("playing");
+      }
+    });
+
+    this.previewAudioElement.addEventListener("pause", () => {
+      if (this.btnPreviewPlay) {
+        this.btnPreviewPlay.textContent = "▶ 播放試聽";
+        this.btnPreviewPlay.classList.remove("playing");
+      }
+    });
+
+    this.previewAudioElement.addEventListener("ended", () => {
+      if (this.btnPreviewPlay) {
+        this.btnPreviewPlay.textContent = "▶ 播放試聽";
+        this.btnPreviewPlay.classList.remove("playing");
+      }
+      if (this.previewScrubber) this.previewScrubber.value = 0;
+    });
+
+    this.previewAudioElement.addEventListener("timeupdate", () => {
+      const cur = this.previewAudioElement.currentTime || 0;
+      const dur = this.previewAudioElement.duration || 0;
+      if (this.previewTimeText && dur > 0) {
+        this.previewTimeText.textContent = `${this.formatShortTime(cur)} / ${this.formatShortTime(dur)}`;
+      }
+      if (this.previewScrubber && dur > 0 && !this.isPreviewScrubbing) {
+        this.previewScrubber.value = (cur / dur) * 100;
+      }
+    });
+
+    this.previewAudioElement.addEventListener("loadedmetadata", () => {
+      const dur = this.previewAudioElement.duration || 0;
+      if (this.previewTimeText) {
+        this.previewTimeText.textContent = `00:00 / ${this.formatShortTime(dur)}`;
+      }
+      if (this.previewScrubber) this.previewScrubber.value = 0;
+    });
+
+    if (this.previewScrubber) {
+      this.previewScrubber.addEventListener("input", () => {
+        this.isPreviewScrubbing = true;
+      });
+      this.previewScrubber.addEventListener("change", (e) => {
+        const dur = this.previewAudioElement.duration || 0;
+        if (dur > 0) {
+          const targetSec = (parseFloat(e.target.value) / 100) * dur;
+          this.previewAudioElement.currentTime = targetSec;
+        }
+        this.isPreviewScrubbing = false;
+      });
+    }
+
+    if (this.previewVolume) {
+      this.previewVolume.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        this.previewAudioElement.volume = val;
+        if (this.previewMuteIcon) {
+          this.previewMuteIcon.textContent = val === 0 ? "🔇" : "🔊";
+        }
+      });
+    }
+
+    if (this.previewMuteIcon) {
+      this.previewMuteIcon.addEventListener("click", () => {
+        if (this.previewAudioElement.volume > 0) {
+          this.previewLastVolume = this.previewAudioElement.volume;
+          this.previewAudioElement.volume = 0;
+          if (this.previewVolume) this.previewVolume.value = 0;
+          this.previewMuteIcon.textContent = "🔇";
+        } else {
+          const restore = this.previewLastVolume || 0.9;
+          this.previewAudioElement.volume = restore;
+          if (this.previewVolume) this.previewVolume.value = restore;
+          this.previewMuteIcon.textContent = "🔊";
+        }
+      });
+    }
+  }
+
+  formatShortTime(sec) {
+    if (!sec || isNaN(sec)) return "00:00";
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  loadSourcePreview(url, name) {
+    if (!this.audioPreviewCard || !this.previewAudioElement) return;
+    if (this.currentPreviewUrl && this.currentPreviewUrl.startsWith("blob:")) {
+      try { URL.revokeObjectURL(this.currentPreviewUrl); } catch { }
+    }
+    this.currentPreviewUrl = url;
+    this.previewAudioElement.src = url;
+    this.previewAudioElement.load();
+    if (this.previewFileName) this.previewFileName.textContent = name;
+    this.audioPreviewCard.style.display = "flex";
+    if (this.btnPreviewPlay) {
+      this.btnPreviewPlay.textContent = "▶ 播放試聽";
+      this.btnPreviewPlay.classList.remove("playing");
+    }
+  }
+
+  stopSourcePreview() {
+    if (this.previewAudioElement && !this.previewAudioElement.paused) {
+      this.previewAudioElement.pause();
+    }
+  }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   window.stemForgeApp = new StemForgeDawApp();
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoLoadId = urlParams.get("load");
+  if (autoLoadId) {
+    setTimeout(() => {
+      window.stemForgeApp.loadHistoryProject(autoLoadId);
+    }, 400);
+  }
 });

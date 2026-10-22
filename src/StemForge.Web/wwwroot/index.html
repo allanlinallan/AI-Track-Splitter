@@ -4,14 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
-  <link rel="stylesheet" href="/css/daw.css?v=4" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
+  <link rel="stylesheet" href="/css/daw.css?v=7" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=1" />
+  <link rel="apple-touch-icon" href="/images/logo.png?v=1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
 </head>
 <body>
   <!-- 頂部系統與硬體狀態列 -->
   <header class="topbar">
     <div class="brand">
+      <img src="/images/logo.png?v=1" alt="StemForge Studio" class="brand-logo" />
       <span class="brand-badge">STEMFORGE .NET 9</span>
       <h1>極限精細音軌分離工作站 <small>19+ Stems Hierarchical DAG + Waveform-Playlist WebAudio Mixer</small></h1>
     </div>
@@ -37,6 +40,24 @@
 
         <div class="local-path-box">
           <input type="text" id="localPathInput" placeholder="或直接貼上本機檔案路徑 (如 D:\music\song.mp3 或 video.mp4)" />
+        </div>
+
+        <!-- 🎧 音源即時試聽播放器 (Pre-listen Player) -->
+        <div class="audio-preview-card" id="audioPreviewCard" style="display: none;">
+          <div class="preview-header">
+            <span class="preview-badge">🎧 音源試聽</span>
+            <span class="preview-filename" id="previewFileName" title="預聽檔案名稱">--</span>
+            <span class="preview-time" id="previewTimeText">00:00 / 00:00</span>
+          </div>
+          <div class="preview-controls">
+            <button type="button" class="btn-preview-play" id="btnPreviewPlay" title="播放 / 暫停試聽">▶ 播放試聽</button>
+            <input type="range" class="preview-scrubber" id="previewScrubber" min="0" max="100" step="0.1" value="0" title="拖曳時間軸進度" />
+            <div class="preview-vol-wrap">
+              <span class="preview-vol-icon" id="previewMuteIcon" title="點擊切換靜音">🔊</span>
+              <input type="range" class="preview-vol" id="previewVolume" min="0" max="1" step="0.05" value="0.9" title="試聽音量" />
+            </div>
+          </div>
+          <audio id="previewAudioElement" preload="metadata" style="display:none;"></audio>
         </div>
 
         <div class="action-row">
@@ -124,6 +145,15 @@
           </button>
         </div>
 
+        <!-- ✂️ 片段剪輯與編曲工具箱 (Edit & Arrangement Tools) -->
+        <div class="edit-tools-panel" id="editToolsPanel">
+          <span class="tools-label">編曲剪輯:</span>
+          <button class="edit-tool-btn active" id="btnToolPointer" title="一般選取/跳轉播放模式 (快速鍵: 1)">🖐️ 選取</button>
+          <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 2)">✂️ 剪刀</button>
+          <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 3)">🔇 片段消音</button>
+          <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段">⟲ 重置剪輯</button>
+        </div>
+
         <div class="timecode-box">
           <span id="currentTimeText">00:00.000</span>
           <span class="sep">/</span>
@@ -153,7 +183,28 @@
           </div>
         </div>
 
+        <!-- AI 時間軸拍速控制組 (原速偵測 + 拍速拉桿 + 一鍵恢復) -->
+        <div class="tempo-panel" id="tempoPanel">
+          <div class="tempo-info">
+            <span class="tempo-badge-orig" id="detectedBpmBadge" title="AI 辨識歌曲原始拍速">原速: -- BPM</span>
+            <span class="tempo-arrow">➔</span>
+            <span class="tempo-badge-target" id="targetBpmBadge" title="當前目標拍速">目標: 原速</span>
+          </div>
+          <div class="tempo-controls-row">
+            <button class="tempo-step-btn" id="btnTempoDown" title="減少 1 BPM">-1</button>
+            <input type="range" id="tempoSlider" min="50" max="220" step="1" value="120" title="調整拍速 (BPM)" />
+            <button class="tempo-step-btn" id="btnTempoUp" title="增加 1 BPM">+1</button>
+            <span class="tempo-value-label" id="tempoValueLabel">120 BPM</span>
+            <button class="btn-xs btn-tempo-apply" id="btnApplyTempo" title="確定並執行 21 軌無損時間軸變速">⚡ 套用新拍速</button>
+            <button class="btn-xs btn-tempo-reset" id="btnResetTempo" title="一鍵重設回原速">⟲ 恢復原速</button>
+          </div>
+        </div>
+
         <div class="export-actions">
+          <button class="btn btn-select-toggle" id="btnSelectAllTracks" disabled title="一鍵打勾選取全部音軌">☑️ 全選</button>
+          <button class="btn btn-select-toggle" id="btnClearAllTracks" disabled title="一鍵清空所有音軌勾選">⬜ 全清</button>
+          <button class="btn btn-save" id="btnSaveProject" disabled title="直接儲存當前專案之消音與剪輯狀態 (快速鍵: Ctrl + S)">💾 儲存專案</button>
+          <button class="btn btn-save-as" id="btnSaveAsProject" disabled title="將當前工程另存為全新專案副本">📑 另存新專案...</button>
           <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
           <button class="btn btn-zip" id="btnExportZip" disabled title="打包下載全部分軌">📦 打包全軌 ZIP</button>
           <button class="btn btn-zip btn-zip-selected" id="btnExportSelectedZip" disabled title="僅打包勾選的分軌 WAV 檔">📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">0</span>)</button>
@@ -211,6 +262,29 @@
     </div>
   </div>
 
-  <script src="/js/webaudio-daw.js?v=17"></script>
+  <!-- 另存專案彈窗 (Save As Project Modal) -->
+  <div class="history-modal" id="saveAsModal">
+    <div class="history-modal-content" style="max-width: 520px; border: 1px solid #3b82f6; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
+      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
+        <h3 style="color: #60a5fa; display: flex; align-items: center; gap: 8px;">💾 另存分軌專案 (Save As Project)</h3>
+        <button class="btn-close" id="btnCloseSaveAs">&times;</button>
+      </div>
+      <div style="padding: 24px;">
+        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
+          系統將為您建立一個獨立的新專案副本，完整保留目前的 <strong>消音剪輯、時間軸變速、變調設定與所有分軌</strong>：
+        </p>
+        <div style="margin-bottom: 22px;">
+          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:8px;">新專案名稱：</label>
+          <input type="text" id="saveAsProjectNameInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #3b82f6; color:#f8fafc; padding:12px 14px; border-radius:8px; font-size:1rem; outline:none;" placeholder="例如：告五人 - 披星戴月的想你 (修剪版)" />
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+          <button class="btn" id="btnCancelSaveAs" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
+          <button class="btn btn-primary" id="btnConfirmSaveAs" style="background:#2563eb; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">💾 確認另存新專案</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/webaudio-daw.js?v=28"></script>
 </body>
 </html>

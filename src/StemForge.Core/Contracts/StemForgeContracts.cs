@@ -83,7 +83,7 @@ public sealed record StemTrackResult
 public sealed record SeparationJobResult
 {
     public required string JobId { get; init; }
-    public required string OriginalFileName { get; init; }
+    public required string OriginalFileName { get; set; }
     public required string SourceAudioUrl { get; init; }
     public required string SourceAudioPath { get; init; }
     public required SeparationMode ActiveMode { get; set; }
@@ -95,6 +95,10 @@ public sealed record SeparationJobResult
     public string? DetectedKey { get; set; }
     public string? DetectedKeyDisplayName { get; set; }
     public int CurrentPitchShift { get; set; } = 0;
+    public double? DetectedBpm { get; set; }
+    public double CurrentTempoRatio { get; set; } = 1.0;
+    public double? TargetBpm { get; set; }
+    public string? ProjectStateJson { get; set; }
     public List<StemTrackResult> Stems { get; set; } = [];
 }
 
@@ -132,3 +136,7 @@ public sealed record HistoryProjectSummary(
     int StemCount,
     DateTime CreatedAt
 );
+
+public sealed record PitchShiftRequest(int? Semitones);
+
+public sealed record TimeStretchRequest(double? TempoRatio, double? TargetBpm);
