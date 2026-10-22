@@ -34,6 +34,12 @@ $AiOutDir = Join-Path $OutDir "ai_engine"
 New-Item -ItemType Directory -Path $AiOutDir -Force | Out-Null
 Copy-Item (Join-Path $RootDir "ai_engine\stemforge_cli.py") -Destination $AiOutDir -Force
 Copy-Item (Join-Path $RootDir "ai_engine\requirements.txt") -Destination $AiOutDir -Force
+if (Test-Path (Join-Path $RootDir "ai_engine\setup_ai_env.ps1")) {
+    Copy-Item (Join-Path $RootDir "ai_engine\setup_ai_env.ps1") -Destination $AiOutDir -Force
+}
+if (Test-Path (Join-Path $RootDir "ai_engine\timbre_transfer.py")) {
+    Copy-Item (Join-Path $RootDir "ai_engine\timbre_transfer.py") -Destination $AiOutDir -Force
+}
 
 $ProjectsOutDir = Join-Path $OutDir "workspace_data\projects"
 $ModelsOutDir   = Join-Path $OutDir "workspace_data\models"
