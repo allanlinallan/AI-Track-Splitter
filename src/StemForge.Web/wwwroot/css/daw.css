@@ -685,6 +685,73 @@ body {
   box-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
 }
 
+.metronome-control-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 4px 10px;
+  margin-left: 4px;
+}
+
+.metro-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.metro-toggle-label:hover {
+  color: #38bdf8;
+}
+
+.metro-toggle-label input[type="checkbox"] {
+  accent-color: #38bdf8;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.metro-beat-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  font-family: Consolas, monospace;
+  color: #475569;
+  background: #1e293b;
+  border: 1px solid #334155;
+  transition: all 0.08s ease;
+}
+
+.metro-beat-indicator.accent {
+  background: #f59e0b;
+  color: #000;
+  border-color: #fbbf24;
+  box-shadow: 0 0 10px #f59e0b;
+  transform: scale(1.18);
+}
+
+.metro-beat-indicator.beat {
+  background: #06b6d4;
+  color: #000;
+  border-color: #22d3ee;
+  box-shadow: 0 0 8px #06b6d4;
+  transform: scale(1.08);
+}
+
 .timecode-box {
   background: #070a12;
   border: 1px solid #1e293b;

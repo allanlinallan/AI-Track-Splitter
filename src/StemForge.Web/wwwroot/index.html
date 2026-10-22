@@ -143,6 +143,19 @@
           <button class="t-btn t-nulltest" id="btnNullTest" disabled title="將所有分軌總和與原始母帶反相 (-180°) 疊加播放，驗證 100% 能量守恆與殘差">
             Ø 反相抵消測試 (Null Test: OFF)
           </button>
+
+          <!-- 🔔 節拍器與預拍一小節控制組 (Metronome & Count-in) -->
+          <div class="metronome-control-box" id="metronomeControlBox">
+            <label class="metro-toggle-label" title="播放前先空 1 小節（4 拍預備拍），第一拍高音重音，抓準節奏再切入音樂">
+              <input type="checkbox" id="chkCountIn" />
+              <span>⏳ 空一小節 (預拍)</span>
+            </label>
+            <label class="metro-toggle-label" title="播放時依照歌曲 BPM 速度同步敲打節拍器（每小節第一拍高音重音，2/3/4 拍次重音）">
+              <input type="checkbox" id="chkMetronome" />
+              <span>🔔 節拍器 (BPM)</span>
+            </label>
+            <span class="metro-beat-indicator" id="metroBeatIndicator" title="節拍器對拍閃爍燈 (第 1 拍金燈，2/3/4 拍藍燈)">●</span>
+          </div>
         </div>
 
         <!-- ✂️ 片段剪輯與編曲工具箱 (Edit & Arrangement Tools) -->

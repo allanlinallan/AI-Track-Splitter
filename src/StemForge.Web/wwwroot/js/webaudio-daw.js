@@ -182,6 +182,41 @@ class StemForgeDawApp {
       });
     }
 
+    // 🔔 節拍器與預拍一小節元件 (Count-in & Metronome)
+    this.chkCountIn = document.getElementById("chkCountIn");
+    this.chkMetronome = document.getElementById("chkMetronome");
+    this.metroBeatIndicator = document.getElementById("metroBeatIndicator");
+    this.countInTimeouts = [];
+    this.metronomeInterval = null;
+
+    if (this.chkCountIn) {
+      const savedCountIn = localStorage.getItem("stemforge_countin");
+      if (savedCountIn !== null) {
+        this.chkCountIn.checked = savedCountIn === "true";
+      }
+      this.chkCountIn.addEventListener("change", () => {
+        localStorage.setItem("stemforge_countin", this.chkCountIn.checked);
+      });
+    }
+
+    if (this.chkMetronome) {
+      const savedMetronome = localStorage.getItem("stemforge_metronome");
+      if (savedMetronome !== null) {
+        this.chkMetronome.checked = savedMetronome === "true";
+      }
+      this.chkMetronome.addEventListener("change", () => {
+        localStorage.setItem("stemforge_metronome", this.chkMetronome.checked);
+        if (this.isPlaying) {
+          if (this.chkMetronome.checked) {
+            const bpm = this.getCurrentBpm();
+            this.startMetronomeScheduler(this.audioCtx.currentTime + 0.04, this.getCurrentTimeSec(), 60.0 / bpm);
+          } else {
+            this.clearMetronome();
+          }
+        }
+      });
+    }
+
     // 處理中半透明變暗遮罩元件 (Busy Overlay)
     this.busyOverlay = document.getElementById("mixerBusyOverlay");
     this.busyTitle = document.getElementById("busyOverlayTitle");
@@ -1108,15 +1143,141 @@ class StemForgeDawApp {
     }
   }
 
+  getCurrentBpm() {
+    if (this.currentBpm && this.currentBpm > 30) return this.currentBpm;
+    if (this.originalBpm && this.originalBpm > 30) return this.originalBpm;
+    if (this.tempoSlider && parseInt(this.tempoSlider.value, 10) > 30) {
+      return parseInt(this.tempoSlider.value, 10);
+    }
+    return 120;
+  }
+
+  playMetronomeClick(time, isAccent = false) {
+    if (!this.audioCtx || this.audioCtx.state === "closed") return;
+    try {
+      const osc = this.audioCtx.createOscillator();
+      const gain = this.audioCtx.createGain();
+
+      // 第一拍重音為高頻清脆 Ping (1760Hz - A6)，其餘拍次為飽滿木質敲擊 Tok (880Hz - A5)
+      const baseFreq = isAccent ? 1760 : 880;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(baseFreq, time);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.4, time + 0.035);
+
+      const vol = isAccent ? 0.85 : 0.55;
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + (isAccent ? 0.045 : 0.03));
+
+      osc.connect(gain);
+      gain.connect(this.masterGainNode || this.audioCtx.destination);
+
+      osc.start(time);
+      osc.stop(time + 0.05);
+      this.activeSources.push(osc);
+    } catch (err) {
+      console.warn("節拍器發聲失敗:", err);
+    }
+  }
+
+  flashMetroDot(isAccent, beatNumber = null) {
+    if (!this.metroBeatIndicator) return;
+    this.metroBeatIndicator.className = isAccent ? "metro-beat-indicator accent" : "metro-beat-indicator beat";
+    if (beatNumber !== null) {
+      this.metroBeatIndicator.textContent = beatNumber;
+    }
+    setTimeout(() => {
+      if (this.metroBeatIndicator) {
+        this.metroBeatIndicator.className = "metro-beat-indicator";
+        this.metroBeatIndicator.textContent = "●";
+      }
+    }, 120);
+  }
+
+  startMetronomeScheduler(syncStartAt, startOffset, beatSec) {
+    this.clearMetronome();
+
+    let currentBeatIdx = Math.round(startOffset / beatSec);
+    let nextBeatTime = syncStartAt;
+
+    this.metronomeInterval = setInterval(() => {
+      if (!this.isPlaying || !this.audioCtx) return;
+      const lookaheadLimit = this.audioCtx.currentTime + 0.25;
+
+      while (nextBeatTime < lookaheadLimit) {
+        if (nextBeatTime >= this.audioCtx.currentTime - 0.03) {
+          const measureBeat = ((currentBeatIdx % 4) + 4) % 4;
+          const isAccent = (measureBeat === 0);
+          this.playMetronomeClick(nextBeatTime, isAccent);
+
+          const delayMs = Math.max(0, (nextBeatTime - this.audioCtx.currentTime) * 1000);
+          const beatNum = measureBeat + 1;
+          setTimeout(() => {
+            if (this.isPlaying) {
+              this.flashMetroDot(isAccent, beatNum);
+            }
+          }, delayMs);
+        }
+        nextBeatTime += beatSec;
+        currentBeatIdx++;
+      }
+    }, 50);
+  }
+
+  clearMetronome() {
+    if (this.metronomeInterval) {
+      clearInterval(this.metronomeInterval);
+      this.metronomeInterval = null;
+    }
+    if (this.countInTimeouts && this.countInTimeouts.length > 0) {
+      for (const tid of this.countInTimeouts) clearTimeout(tid);
+      this.countInTimeouts = [];
+    }
+    if (this.metroBeatIndicator) {
+      this.metroBeatIndicator.className = "metro-beat-indicator";
+      this.metroBeatIndicator.textContent = "●";
+    }
+  }
+
   startPlayback() {
     if (this.tracks.length === 0) return;
     this.ensureAudioContext();
     this.stopActiveSourcesOnly();
+    this.clearMetronome();
 
     const offset = this.pauseOffsetSec >= this.durationSec ? 0 : this.pauseOffsetSec;
     this.pauseOffsetSec = offset;
 
-    const syncStartAt = this.audioCtx.currentTime + 0.03;
+    const bpm = this.getCurrentBpm();
+    const beatSec = 60.0 / bpm;
+    const hasCountIn = this.chkCountIn && this.chkCountIn.checked;
+    const hasMetronome = this.chkMetronome && this.chkMetronome.checked;
+
+    let syncStartAt = this.audioCtx.currentTime + 0.04;
+
+    if (hasCountIn) {
+      // ⏳ 前面空一小節 (4 拍預備拍)
+      const countInStartAt = syncStartAt;
+      const barSec = beatSec * 4;
+      syncStartAt = countInStartAt + barSec;
+
+      for (let b = 0; b < 4; b++) {
+        const clickTime = countInStartAt + b * beatSec;
+        const isAccent = (b === 0);
+        this.playMetronomeClick(clickTime, isAccent);
+
+        const delayMs = Math.max(0, (clickTime - this.audioCtx.currentTime) * 1000);
+        const tid = setTimeout(() => {
+          if (!this.isPlaying) return;
+          this.flashMetroDot(isAccent, b + 1);
+          const timecodeEl = document.getElementById("currentTimeText");
+          if (timecodeEl) {
+            timecodeEl.textContent = `⏳ 預拍 [${b + 1}/4]`;
+          }
+        }, delayMs);
+        this.countInTimeouts.push(tid);
+      }
+    }
+
     this.startTimeCtx = syncStartAt - offset;
 
     for (const t of this.tracks) {
@@ -1145,6 +1306,10 @@ class StemForgeDawApp {
     this.btnPlayPause.textContent = "⏸ 暫停 (Pause)";
     this.btnPlayPause.classList.add("playing");
 
+    if (hasMetronome) {
+      this.startMetronomeScheduler(syncStartAt, offset, beatSec);
+    }
+
     this.tickPlayhead();
   }
 
@@ -1152,6 +1317,7 @@ class StemForgeDawApp {
     if (!this.isPlaying) return;
     this.pauseOffsetSec = this.getCurrentTimeSec();
     this.stopActiveSourcesOnly();
+    this.clearMetronome();
     this.isPlaying = false;
     this.btnPlayPause.textContent = "▶ 播放 (Play)";
     this.btnPlayPause.classList.remove("playing");
@@ -1159,6 +1325,7 @@ class StemForgeDawApp {
 
   stopPlayback() {
     this.stopActiveSourcesOnly();
+    this.clearMetronome();
     this.isPlaying = false;
     this.pauseOffsetSec = 0;
     this.btnPlayPause.textContent = "▶ 播放 (Play)";
@@ -1191,7 +1358,11 @@ class StemForgeDawApp {
 
   getCurrentTimeSec() {
     if (!this.isPlaying || !this.audioCtx) return this.pauseOffsetSec;
-    return Math.max(0, this.audioCtx.currentTime - this.startTimeCtx);
+    const t = this.audioCtx.currentTime - this.startTimeCtx;
+    if (t < this.pauseOffsetSec) {
+      return this.pauseOffsetSec;
+    }
+    return Math.max(0, t);
   }
 
   tickPlayhead() {
@@ -1201,7 +1372,11 @@ class StemForgeDawApp {
       this.stopPlayback();
       return;
     }
-    this.updatePlayheadUi(cur);
+    // 若在預拍期間，保留 ⏳ 預拍 [X/4] 視覺，不立即被時間碼數字刷掉
+    const isCountingIn = this.audioCtx && (this.audioCtx.currentTime < this.startTimeCtx + this.pauseOffsetSec);
+    if (!isCountingIn) {
+      this.updatePlayheadUi(cur);
+    }
     this.rafId = requestAnimationFrame(() => this.tickPlayhead());
   }
 
