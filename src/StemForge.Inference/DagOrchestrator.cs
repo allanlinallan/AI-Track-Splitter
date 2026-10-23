@@ -428,6 +428,15 @@ public sealed class DagOrchestrator
             onProgress,
             ct);
 
+        // 繼承原任務的 AI 偵測調性、BPM 速度、音高校正與工程狀態，避免切換分離模式時 BPM 與調性丟失
+        updated.DetectedKey = existing.DetectedKey;
+        updated.DetectedKeyDisplayName = existing.DetectedKeyDisplayName;
+        updated.CurrentPitchShift = existing.CurrentPitchShift;
+        updated.DetectedBpm = existing.DetectedBpm;
+        updated.CurrentTempoRatio = existing.CurrentTempoRatio;
+        updated.TargetBpm = existing.TargetBpm;
+        updated.ProjectStateJson = existing.ProjectStateJson;
+
         _jobs[jobId] = updated;
         return updated;
     }
@@ -1023,6 +1032,41 @@ public sealed class DagOrchestrator
             NullTestCancellationDbFs = nullTestDb,
             Stems = stemResults
         };
+
+        // 自動讀取專案既有的 AI 偵測 BPM 與調性檔，避免切換模式時丟失
+        string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
+        if (File.Exists(bpmJsonPath))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(bpmJsonPath));
+                if (doc.RootElement.TryGetProperty("bpm", out var bEl) && bEl.TryGetDouble(out var bVal))
+                {
+                    jobResult.DetectedBpm = bVal;
+                    jobResult.TargetBpm = bVal;
+                    jobResult.CurrentTempoRatio = 1.0;
+                }
+            }
+            catch { }
+        }
+
+        string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
+        if (File.Exists(keyJsonPath))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(keyJsonPath));
+                if (doc.RootElement.TryGetProperty("key", out var kEl))
+                {
+                    jobResult.DetectedKey = kEl.GetString();
+                }
+                if (doc.RootElement.TryGetProperty("displayName", out var dEl))
+                {
+                    jobResult.DetectedKeyDisplayName = dEl.GetString();
+                }
+            }
+            catch { }
+        }
 
         if (exportReaper)
         {

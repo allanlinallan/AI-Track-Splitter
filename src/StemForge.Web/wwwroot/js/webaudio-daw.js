@@ -76,6 +76,7 @@ class StemForgeDawApp {
 
     this.btnDownloadRpp = document.getElementById("btnDownloadRpp");
     this.btnExportZip = document.getElementById("btnExportZip");
+
     this.btnSelectAllTracks = document.getElementById("btnSelectAllTracks");
     this.btnClearAllTracks = document.getElementById("btnClearAllTracks");
     this.btnExportSelectedZip = document.getElementById("btnExportSelectedZip");
@@ -92,6 +93,7 @@ class StemForgeDawApp {
 
     // AI 神經變調控制元件 (原調偵測 + ±6半音升降桿 + 點擊開始做 + 一鍵恢復)
     this.detectedKeyBadge = document.getElementById("detectedKeyBadge");
+    this.keyOverrideSelect = document.getElementById("keyOverrideSelect");
     this.targetKeyBadge = document.getElementById("targetKeyBadge");
     this.pitchShiftSlider = document.getElementById("pitchShiftSlider");
     this.btnPitchDown = document.getElementById("btnPitchDown");
@@ -184,10 +186,28 @@ class StemForgeDawApp {
 
     // 🔔 節拍器與預拍一小節元件 (Count-in & Metronome)
     this.chkCountIn = document.getElementById("chkCountIn");
+    this.selCountInPickup = document.getElementById("selCountInPickup");
     this.chkMetronome = document.getElementById("chkMetronome");
     this.metroBeatIndicator = document.getElementById("metroBeatIndicator");
     this.countInTimeouts = [];
     this.metronomeInterval = null;
+
+    if (this.selCountInPickup) {
+      const savedPickup = localStorage.getItem("stemforge_countin_pickup");
+      if (savedPickup !== null) {
+        this.selCountInPickup.value = savedPickup;
+      }
+      this.selCountInPickup.addEventListener("change", () => {
+        localStorage.setItem("stemforge_countin_pickup", this.selCountInPickup.value);
+      });
+    }
+
+    const updateCountInUi = () => {
+      if (this.selCountInPickup) {
+        this.selCountInPickup.style.display = (this.chkCountIn && this.chkCountIn.checked) ? "inline-block" : "none";
+      }
+      this.updateCheckedTracksCount();
+    };
 
     if (this.chkCountIn) {
       const savedCountIn = localStorage.getItem("stemforge_countin");
@@ -196,7 +216,9 @@ class StemForgeDawApp {
       }
       this.chkCountIn.addEventListener("change", () => {
         localStorage.setItem("stemforge_countin", this.chkCountIn.checked);
+        updateCountInUi();
       });
+      updateCountInUi();
     }
 
     if (this.chkMetronome) {
@@ -226,12 +248,22 @@ class StemForgeDawApp {
     this.btnCancelTrimSilence = document.getElementById("btnCancelTrimSilence");
     this.btnConfirmTrimSilence = document.getElementById("btnConfirmTrimSilence");
     this.trimDetectInfo = document.getElementById("trimDetectInfo");
-    this.radioTrimBeat1 = document.getElementById("radioTrimBeat1");
-    this.radioTrimTight = document.getElementById("radioTrimTight");
-    this.trimAmountDisplay = document.getElementById("trimAmountDisplay");
-    this.optLabelTrimBeat1 = document.getElementById("optLabelTrimBeat1");
-    this.optLabelTrimTight = document.getElementById("optLabelTrimTight");
-    this.currentTrimAnalysis = null;
+    this.trimWaveformCanvas = document.getElementById("trimWaveformCanvas");
+    this.btnAuditionTrim = document.getElementById("btnAuditionTrim");
+    this.trimPresetButtons = document.getElementById("trimPresetButtons");
+    this.trimManualInput = document.getElementById("trimManualInput");
+    this.btnNudgeTrimM50 = document.getElementById("btnNudgeTrimM50");
+    this.btnNudgeTrimM10 = document.getElementById("btnNudgeTrimM10");
+    this.btnNudgeTrimP10 = document.getElementById("btnNudgeTrimP10");
+    this.btnNudgeTrimP50 = document.getElementById("btnNudgeTrimP50");
+
+    this.detectedOnsetSec = 0;
+    this.currentTrimCutSec = 0;
+    this.trimMaxViewSec = 6.0;
+    this.isAuditioningTrim = false;
+    this.trimAuditionSources = [];
+    this.trimAuditionTimer = null;
+    this.isDraggingTrim = false;
 
     if (this.btnAutoTrimSilence) {
       this.btnAutoTrimSilence.addEventListener("click", () => this.openTrimSilenceModal());
@@ -254,23 +286,8 @@ class StemForgeDawApp {
       this.btnConfirmTrimSilence.addEventListener("click", () => this.confirmTrimSilence());
     }
 
-    const updateTrimRadioUi = () => {
-      if (!this.currentTrimAnalysis) return;
-      const isBeat1 = this.radioTrimBeat1 && this.radioTrimBeat1.checked;
-      const sec = isBeat1 ? this.currentTrimAnalysis.beat1TrimSec : this.currentTrimAnalysis.tightTrimSec;
-      if (this.trimAmountDisplay) {
-        this.trimAmountDisplay.textContent = `${sec.toFixed(2)} 秒`;
-      }
-      if (this.optLabelTrimBeat1) {
-        this.optLabelTrimBeat1.style.borderColor = isBeat1 ? "#10b981" : "#334155";
-      }
-      if (this.optLabelTrimTight) {
-        this.optLabelTrimTight.style.borderColor = !isBeat1 ? "#10b981" : "#334155";
-      }
-    };
-
-    if (this.radioTrimBeat1) this.radioTrimBeat1.addEventListener("change", updateTrimRadioUi);
-    if (this.radioTrimTight) this.radioTrimTight.addEventListener("change", updateTrimRadioUi);
+    this.initTrimWaveformInteractions();
+    this.initTrimPresetControls();
 
     // 處理中半透明變暗遮罩元件 (Busy Overlay)
     this.busyOverlay = document.getElementById("mixerBusyOverlay");
@@ -304,6 +321,9 @@ class StemForgeDawApp {
         this.updatePitchUiOnly(0);
         this.applyPitchShift(0);
       });
+    }
+    if (this.keyOverrideSelect) {
+      this.keyOverrideSelect.addEventListener("change", (e) => this.handleManualKeyOverride(e.target.value));
     }
 
     if (this.tempoSlider) {
@@ -724,12 +744,20 @@ class StemForgeDawApp {
   async switchJobMode(jobId, mode) {
     const wasPlaying = this.isPlaying;
     const currentPos = this.getCurrentTimeSec();
+    const currentBpm = this.currentBpm || this.originalBpm;
+    const currentLeadTrim = this.leadTrimSec;
     this.stopPlayback();
 
     const res = await fetch(`/api/jobs/${jobId}/mode/${mode}`, { method: "POST" });
     if (res.ok) {
       const updated = await res.json();
+      if (!updated.detectedBpm && currentBpm) {
+        updated.detectedBpm = currentBpm;
+      }
       await this.loadJobIntoMixer(updated);
+      if (currentLeadTrim > 0) {
+        this.applyLeadTrim(currentLeadTrim, false);
+      }
       if (wasPlaying) {
         this.seekTo(currentPos);
         this.startPlayback();
@@ -769,7 +797,11 @@ class StemForgeDawApp {
 
     const detectedKeyDisplay = jobResult.detectedKeyDisplayName || jobResult.detectedKey || "C 大調 (C Major)";
     if (this.detectedKeyBadge) {
-      this.detectedKeyBadge.textContent = `原調: ${detectedKeyDisplay}`;
+      this.detectedKeyBadge.innerHTML = `原調: ${detectedKeyDisplay} ▾ <span style="font-size: 10px; color: #38bdf8;">[點擊修改]</span>`;
+    }
+    if (this.keyOverrideSelect && jobResult.detectedKey) {
+      const matchOpt = Array.from(this.keyOverrideSelect.options).find(o => o.value.startsWith(jobResult.detectedKey + "|"));
+      if (matchOpt) this.keyOverrideSelect.value = matchOpt.value;
     }
     if (this.pitchShiftSlider) {
       this.pitchShiftSlider.value = 0;
@@ -781,7 +813,9 @@ class StemForgeDawApp {
       this.targetKeyBadge.textContent = "目標: 原調 (0)";
     }
 
-    const bpmVal = jobResult.detectedBpm ? Math.round(jobResult.detectedBpm) : 120;
+    const bpmVal = jobResult.detectedBpm
+      ? Math.round(jobResult.detectedBpm)
+      : (this.currentBpm && this.currentBpm > 30 ? this.currentBpm : (this.originalBpm || 120));
     this.originalBpm = bpmVal;
     this.currentBpm = bpmVal;
 
@@ -807,6 +841,7 @@ class StemForgeDawApp {
       this.btnDownloadRpp.classList.remove("disabled");
     }
     this.btnExportZip.disabled = false;
+
     if (this.btnSaveProject) this.btnSaveProject.disabled = false;
     if (this.btnSaveAsProject) this.btnSaveAsProject.disabled = false;
     if (this.btnSelectAllTracks) this.btnSelectAllTracks.disabled = false;
@@ -974,6 +1009,7 @@ class StemForgeDawApp {
     const wfWrap = row.querySelector(".track-waveform-wrap");
     const canvas = row.querySelector(".track-waveform-canvas");
     const btnMidi = row.querySelector(".btn-midi");
+
     const regionsOverlay = row.querySelector(".track-regions-overlay");
     const scissorLine = row.querySelector(".scissor-indicator-line");
     const scissorLabel = row.querySelector(".scissor-indicator-label");
@@ -1318,13 +1354,22 @@ class StemForgeDawApp {
     const hasCountIn = this.chkCountIn && this.chkCountIn.checked;
     const hasMetronome = this.chkMetronome && this.chkMetronome.checked;
 
+    // 弱起拍（Pickup）進歌拍數設定：正拍(0), 搶半拍(0.5), 第4拍(1), 第3拍(2)
+    const pickupBeats = (offset < 0.05 && hasCountIn && this.selCountInPickup)
+      ? (parseFloat(this.selCountInPickup.value) || 0)
+      : 0;
+
     let syncStartAt = this.audioCtx.currentTime + 0.04;
+    let downbeatTime = syncStartAt;
 
     if (hasCountIn) {
       // ⏳ 前面空一小節 (4 拍預備拍)
       const countInStartAt = syncStartAt;
       const barSec = beatSec * 4;
-      syncStartAt = countInStartAt + barSec;
+      downbeatTime = countInStartAt + barSec;
+
+      // 音樂進場發聲時間點：若為弱起 1 拍，則提早在第 4 拍發聲 (countInStartAt + 3 * beatSec)
+      syncStartAt = downbeatTime - (pickupBeats * beatSec);
 
       for (let b = 0; b < 4; b++) {
         const clickTime = countInStartAt + b * beatSec;
@@ -1332,12 +1377,17 @@ class StemForgeDawApp {
         this.playMetronomeClick(clickTime, isAccent);
 
         const delayMs = Math.max(0, (clickTime - this.audioCtx.currentTime) * 1000);
+        const beatNum = b + 1;
         const tid = setTimeout(() => {
           if (!this.isPlaying) return;
-          this.flashMetroDot(isAccent, b + 1);
+          this.flashMetroDot(isAccent, beatNum);
           const timecodeEl = document.getElementById("currentTimeText");
           if (timecodeEl) {
-            timecodeEl.textContent = `⏳ 預拍 [${b + 1}/4]`;
+            if (pickupBeats > 0 && beatNum > (4 - Math.ceil(pickupBeats))) {
+              timecodeEl.textContent = `⏳ 預拍 [${beatNum}/4] 🎵 進歌!`;
+            } else {
+              timecodeEl.textContent = `⏳ 預拍 [${beatNum}/4]`;
+            }
           }
         }, delayMs);
         this.countInTimeouts.push(tid);
@@ -1374,7 +1424,8 @@ class StemForgeDawApp {
     this.btnPlayPause.classList.add("playing");
 
     if (hasMetronome) {
-      this.startMetronomeScheduler(syncStartAt, offset, beatSec);
+      const metroStartAt = hasCountIn ? downbeatTime : syncStartAt;
+      this.startMetronomeScheduler(metroStartAt, offset, beatSec);
     }
 
     this.tickPlayhead();
@@ -1486,14 +1537,16 @@ class StemForgeDawApp {
       this.btnExportSelectedZip.innerHTML = `📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">${count}</span>)`;
       this.selectedTracksCountText = document.getElementById("selectedTracksCountText");
     }
+    const hasCountIn = this.chkCountIn && this.chkCountIn.checked;
+    const countInLabel = hasCountIn ? " + 預拍" : "";
     if (this.btnExportMixdownWav) {
       this.btnExportMixdownWav.disabled = !hasActiveJob;
-      this.btnExportMixdownWav.innerHTML = `🎚️ 合併匯出 WAV (<span id="mixdownWavCountText">${count}</span>)`;
+      this.btnExportMixdownWav.innerHTML = `🎚️ 合併匯出 WAV (<span id="mixdownWavCountText">${count} 軌${countInLabel}</span>)`;
       this.mixdownWavCountText = document.getElementById("mixdownWavCountText");
     }
     if (this.btnExportMixdownMp3) {
       this.btnExportMixdownMp3.disabled = !hasActiveJob;
-      this.btnExportMixdownMp3.innerHTML = `🎵 合併匯出 MP3 (<span id="mixdownMp3CountText">${count}</span>)`;
+      this.btnExportMixdownMp3.innerHTML = `🎵 合併匯出 MP3 (<span id="mixdownMp3CountText">${count} 軌${countInLabel}</span>)`;
       this.mixdownMp3CountText = document.getElementById("mixdownMp3CountText");
     }
   }
@@ -1530,9 +1583,15 @@ class StemForgeDawApp {
       targetBtn.textContent = isMp3 ? "⏳ MP3 轉碼中..." : "⏳ WAV 混音中...";
     }
 
+    const hasCountIn = this.chkCountIn && this.chkCountIn.checked;
+    const pickupBeats = (hasCountIn && this.selCountInPickup) ? (parseFloat(this.selCountInPickup.value) || 0) : 0;
+    const bpm = this.getCurrentBpm() || 120;
+    const semitones = parseInt(this.pitchShiftSlider?.value || 0, 10) || (this.currentJob?.currentPitchShift || 0) || 0;
+    const signText = semitones > 0 ? `+${semitones} 半音` : (semitones < 0 ? `${semitones} 半音` : "");
+
     this.showBusyOverlay(
       isMp3 ? "🎵 正在合併匯出 MP3..." : "🎚️ 正在合併匯出 WAV...",
-      `正在將已選取的 ${this.checkedNodeIds.size} 條音軌進行 32-bit Float 數位總線混音與編碼...`,
+      `正在將已選取的 ${this.checkedNodeIds.size} 條音軌${semitones !== 0 ? ` [${signText}]` : ""}${hasCountIn ? `（含 1 小節節拍器預拍，BPM: ${bpm}）` : ""}進行 32-bit Float 數位總線混音與編碼...`,
       45,
       "🎚️"
     );
@@ -1551,7 +1610,11 @@ class StemForgeDawApp {
         selectedNodes: Array.from(this.checkedNodeIds),
         format: format,
         mutedRanges: mutedRanges,
-        trimStartSec: this.leadTrimSec || 0
+        trimStartSec: this.leadTrimSec || 0,
+        hasCountIn: hasCountIn,
+        pickupBeats: pickupBeats,
+        bpm: bpm,
+        semitones: semitones
       };
       const r = await fetch(`/api/jobs/${this.currentJob.jobId}/mixdown`, {
         method: "POST",
@@ -1597,6 +1660,7 @@ class StemForgeDawApp {
     } finally {
       this.hideBusyOverlay();
       this.btnExportZip.disabled = false;
+
     if (this.btnSaveProject) this.btnSaveProject.disabled = false;
     if (this.btnSaveAsProject) this.btnSaveAsProject.disabled = false;
     if (this.btnSelectAllTracks) this.btnSelectAllTracks.disabled = false;
@@ -1736,6 +1800,34 @@ class StemForgeDawApp {
     }
   }
 
+  async handleManualKeyOverride(compositeVal) {
+    if (!compositeVal || !this.currentJob) return;
+    const [key, displayName] = compositeVal.split("|");
+    if (!key || !displayName) return;
+
+    this.currentJob.detectedKey = key;
+    this.currentJob.detectedKeyDisplayName = displayName;
+
+    if (this.detectedKeyBadge) {
+      this.detectedKeyBadge.innerHTML = `原調: ${displayName} ▾ <span style="font-size: 10px; color: #38bdf8;">[點擊修改]</span>`;
+    }
+
+    const curPitch = parseInt(this.pitchShiftSlider?.value || "0", 10);
+    this.updatePitchUiOnly(curPitch);
+
+    this.showToast(`🎵 已手動校正原調為：${displayName}`);
+
+    try {
+      await fetch(`/api/jobs/${this.currentJob.jobId}/override-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, displayName })
+      });
+    } catch (err) {
+      console.warn("Key override sync failed:", err);
+    }
+  }
+
   updatePitchUiOnly(val) {
     if (this.pitchValueLabel) {
       this.pitchValueLabel.textContent = val === 0 ? "0 半音" : `${val > 0 ? "+" + val : val} 半音`;
@@ -1823,6 +1915,11 @@ class StemForgeDawApp {
           }
         })
       );
+
+      if (this.currentJob) {
+        this.currentJob.stems = data.stems;
+        this.currentJob.currentPitchShift = semitones;
+      }
 
       if (bannerStage) bannerStage.textContent = "READY";
       if (bannerTitle) bannerTitle.textContent = `神經變調完成！當前調性: ${data.targetKey}`;
@@ -1960,6 +2057,13 @@ class StemForgeDawApp {
       for (const track of this.tracks) {
         this.drawWaveform(track);
       }
+
+      if (this.currentJob) {
+        this.currentJob.stems = data.stems;
+        this.currentJob.currentTempoRatio = ratio;
+        this.currentJob.targetBpm = targetBpm;
+      }
+      this.currentBpm = targetBpm;
 
       if (bannerStage) bannerStage.textContent = "READY";
       if (bannerTitle) bannerTitle.textContent = `拍速調整完成！當前拍速: ${targetBpm} BPM`;
@@ -2444,6 +2548,424 @@ class StemForgeDawApp {
     }, 2800);
   }
 
+  initTrimWaveformInteractions() {
+    const canvas = this.trimWaveformCanvas;
+    if (!canvas) return;
+
+    const handlePointer = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+      const viewSec = this.trimMaxViewSec || 6.0;
+      const sec = (x / rect.width) * viewSec;
+      this.setTrimCutSec(sec, null);
+    };
+
+    canvas.addEventListener("mousedown", (e) => {
+      this.isDraggingTrim = true;
+      handlePointer(e);
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (this.isDraggingTrim) {
+        handlePointer(e);
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (this.isDraggingTrim) {
+        this.isDraggingTrim = false;
+      }
+    });
+
+    canvas.addEventListener("touchstart", (e) => {
+      if (e.touches.length > 0) {
+        this.isDraggingTrim = true;
+        handlePointer(e.touches[0]);
+      }
+    }, { passive: true });
+
+    window.addEventListener("touchmove", (e) => {
+      if (this.isDraggingTrim && e.touches.length > 0) {
+        handlePointer(e.touches[0]);
+      }
+    }, { passive: true });
+
+    window.addEventListener("touchend", () => {
+      this.isDraggingTrim = false;
+    });
+  }
+
+  initTrimPresetControls() {
+    if (this.trimPresetButtons) {
+      const btns = this.trimPresetButtons.querySelectorAll(".trim-preset-btn");
+      btns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const preset = btn.dataset.preset;
+          const bpm = this.getCurrentBpm() || 120;
+          const beatSec = 60.0 / bpm;
+          let cut = 0;
+
+          switch (preset) {
+            case "tight":
+              cut = Math.max(0, this.detectedOnsetSec - 0.015);
+              break;
+            case "half":
+              cut = Math.max(0, this.detectedOnsetSec - 0.5 * beatSec);
+              if (this.selCountInPickup) {
+                this.selCountInPickup.value = "0.5";
+                localStorage.setItem("stemforge_countin_pickup", "0.5");
+              }
+              break;
+            case "1beat":
+              cut = Math.max(0, this.detectedOnsetSec - 1.0 * beatSec);
+              if (this.selCountInPickup) {
+                this.selCountInPickup.value = "1";
+                localStorage.setItem("stemforge_countin_pickup", "1");
+              }
+              break;
+            case "2beats":
+              cut = Math.max(0, this.detectedOnsetSec - 2.0 * beatSec);
+              if (this.selCountInPickup) {
+                this.selCountInPickup.value = "2";
+                localStorage.setItem("stemforge_countin_pickup", "2");
+              }
+              break;
+            case "1bar":
+              cut = Math.max(0, this.detectedOnsetSec - 4.0 * beatSec);
+              if (this.selCountInPickup) {
+                this.selCountInPickup.value = "0";
+                localStorage.setItem("stemforge_countin_pickup", "0");
+              }
+              break;
+            default:
+              cut = this.detectedOnsetSec;
+          }
+
+          this.setTrimCutSec(cut, preset);
+        });
+      });
+    }
+
+    if (this.btnNudgeTrimM50) {
+      this.btnNudgeTrimM50.addEventListener("click", () => this.setTrimCutSec(this.currentTrimCutSec - 0.050));
+    }
+    if (this.btnNudgeTrimM10) {
+      this.btnNudgeTrimM10.addEventListener("click", () => this.setTrimCutSec(this.currentTrimCutSec - 0.010));
+    }
+    if (this.btnNudgeTrimP10) {
+      this.btnNudgeTrimP10.addEventListener("click", () => this.setTrimCutSec(this.currentTrimCutSec + 0.010));
+    }
+    if (this.btnNudgeTrimP50) {
+      this.btnNudgeTrimP50.addEventListener("click", () => this.setTrimCutSec(this.currentTrimCutSec + 0.050));
+    }
+
+    if (this.trimManualInput) {
+      this.trimManualInput.addEventListener("input", (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v)) {
+          this.setTrimCutSec(v, null);
+        }
+      });
+    }
+
+    if (this.btnAuditionTrim) {
+      this.btnAuditionTrim.addEventListener("click", () => this.toggleTrimAudition());
+    }
+  }
+
+  updateTrimWaveformHeader() {
+    const lbl = document.getElementById("trimWaveformHeaderLabel");
+    if (lbl) {
+      const secStr = (this.trimMaxViewSec || 6.0).toFixed(1);
+      lbl.textContent = `前奏波形視覺放大 (前 ${secStr} 秒) — 可直接點擊波形調整起點：`;
+    }
+  }
+
+  setTrimCutSec(sec, presetName = null) {
+    if (sec > (this.trimMaxViewSec || 6.0)) {
+      this.trimMaxViewSec = Math.min(this.durationSec || 60.0, Math.ceil((sec + 2.5) * 2) / 2);
+      this.updateTrimWaveformHeader();
+    }
+    const maxView = this.trimMaxViewSec || 6.0;
+    this.currentTrimCutSec = Math.max(0, Math.min(maxView, Math.round(sec * 1000) / 1000));
+
+    if (this.trimManualInput) {
+      this.trimManualInput.value = this.currentTrimCutSec.toFixed(3);
+    }
+
+    if (this.trimPresetButtons) {
+      const btns = this.trimPresetButtons.querySelectorAll(".trim-preset-btn");
+      btns.forEach((btn) => {
+        if (presetName && btn.dataset.preset === presetName) {
+          btn.classList.add("active");
+        } else if (!presetName) {
+          btn.classList.remove("active");
+        }
+      });
+    }
+
+    this.drawTrimWaveform();
+  }
+
+  drawTrimWaveform() {
+    const canvas = this.trimWaveformCanvas;
+    if (!canvas) return;
+
+    const parentW = canvas.parentElement ? canvas.parentElement.clientWidth : 630;
+    const width = parentW > 0 ? parentW : 630;
+    const height = 95;
+
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+    }
+
+    const ctx = canvas.getContext("2d");
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    // Background
+    ctx.fillStyle = "#070a12";
+    ctx.fillRect(0, 0, width, height);
+
+    const viewSec = this.trimMaxViewSec || 6.0;
+
+    // 自適應時間軸刻度與標籤間距
+    let gridStep = 0.5;
+    let labelStep = 1.0;
+    if (viewSec > 25) {
+      gridStep = 2.0;
+      labelStep = 5.0;
+    } else if (viewSec > 12) {
+      gridStep = 1.0;
+      labelStep = 2.0;
+    } else if (viewSec > 6) {
+      gridStep = 0.5;
+      labelStep = 1.0;
+    } else {
+      gridStep = 0.5;
+      labelStep = 0.5;
+    }
+
+    ctx.lineWidth = 1;
+    ctx.font = "10px Consolas, monospace";
+    for (let s = gridStep; s <= viewSec; s += gridStep) {
+      const x = (s / viewSec) * width;
+      const isMajor = Math.abs(Math.round(s / labelStep) * labelStep - s) < 0.01;
+      ctx.strokeStyle = isMajor ? "rgba(148, 163, 184, 0.35)" : "rgba(148, 163, 184, 0.12)";
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+
+      if (isMajor) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.textAlign = "center";
+        const labelText = s % 1 === 0 ? `${s.toFixed(0)}s` : `${s.toFixed(1)}s`;
+        ctx.fillText(labelText, x, height - 6);
+      }
+    }
+
+    // Draw composite waveform from active stems
+    if (this.tracks && this.tracks.length > 0) {
+      const sampleRate = this.tracks[0].audioBuffer.sampleRate || 44100;
+      const maxSamples = Math.floor(viewSec * sampleRate);
+
+      const numCols = Math.floor(width);
+      const peaks = new Float32Array(numCols);
+      const samplesPerPixel = maxSamples / numCols;
+
+      for (const t of this.tracks) {
+        if (!t.audioBuffer || t.hiddenByTree) continue;
+        const ch0 = t.audioBuffer.getChannelData(0);
+        const ch1 = t.audioBuffer.numberOfChannels > 1 ? t.audioBuffer.getChannelData(1) : ch0;
+        const trackLen = Math.min(ch0.length, maxSamples);
+
+        for (let col = 0; col < numCols; col++) {
+          const start = Math.floor(col * samplesPerPixel);
+          const end = Math.min(Math.floor((col + 1) * samplesPerPixel), trackLen);
+          if (start >= trackLen) break;
+
+          let maxVal = 0;
+          const step = Math.max(1, Math.floor((end - start) / 8));
+          for (let idx = start; idx < end; idx += step) {
+            const v = Math.max(Math.abs(ch0[idx]), Math.abs(ch1[idx]));
+            if (v > maxVal) maxVal = v;
+          }
+          if (maxVal > peaks[col]) peaks[col] = maxVal;
+        }
+      }
+
+      const midY = (height - 18) / 2 + 6;
+      const ampY = (height - 24) / 2;
+
+      ctx.fillStyle = "rgba(56, 189, 248, 0.65)";
+      for (let col = 0; col < numCols; col++) {
+        const h = Math.max(2, peaks[col] * ampY);
+        ctx.fillRect(col, midY - h, 1, h * 2);
+      }
+    }
+
+    // Draw Trimmed / Muted zone (0 to cutSec)
+    const cutSec = this.currentTrimCutSec || 0;
+    const cutX = Math.max(0, Math.min(width, (cutSec / viewSec) * width));
+
+    if (cutX > 0) {
+      ctx.fillStyle = "rgba(239, 68, 68, 0.18)";
+      ctx.fillRect(0, 0, cutX, height);
+
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.15)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = -height; x < cutX; x += 12) {
+        ctx.moveTo(Math.max(0, x), 0);
+        ctx.lineTo(Math.min(cutX, x + height), height);
+      }
+      ctx.stroke();
+
+      if (cutX > 60) {
+        ctx.fillStyle = "rgba(239, 68, 68, 0.85)";
+        ctx.font = "bold 9px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`✂️ 切除 0s ~ ${cutSec.toFixed(3)}s`, 6, 14);
+      }
+    }
+
+    // Draw Onset Line (dashed cyan)
+    if (this.detectedOnsetSec > 0 && this.detectedOnsetSec <= viewSec) {
+      const onsetX = (this.detectedOnsetSec / viewSec) * width;
+      ctx.save();
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(onsetX, 0);
+      ctx.lineTo(onsetX, height);
+      ctx.stroke();
+      ctx.restore();
+
+      const labelW = 76;
+      const labelX = Math.max(labelW / 2 + 2, Math.min(width - labelW / 2 - 2, onsetX));
+      ctx.fillStyle = "#0284c7";
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(labelX - labelW / 2, 18, labelW, 15, 3);
+      else ctx.rect(labelX - labelW / 2, 18, labelW, 15);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`⚡起音 ${this.detectedOnsetSec.toFixed(3)}s`, labelX, 29);
+    }
+
+    // Draw Cut Point Vertical Line (Emerald Green)
+    ctx.save();
+    ctx.strokeStyle = "#10b981";
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = "#10b981";
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(cutX, 0);
+    ctx.lineTo(cutX, height);
+    ctx.stroke();
+    ctx.restore();
+
+    // Green Flag Badge at the cut line
+    const badgeW = 76;
+    const badgeH = 16;
+    const badgeX = Math.max(2, Math.min(width - badgeW - 2, cutX - badgeW / 2));
+    const badgeY = 2;
+
+    ctx.fillStyle = "#059669";
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+    else ctx.rect(badgeX, badgeY, badgeW, badgeH);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 10px Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`🚩 起點 ${cutSec.toFixed(3)}s`, badgeX + badgeW / 2, badgeY + 12);
+
+    ctx.restore();
+  }
+
+  toggleTrimAudition() {
+    if (this.isAuditioningTrim) {
+      this.stopTrimAudition();
+    } else {
+      this.startTrimAudition();
+    }
+  }
+
+  stopTrimAudition() {
+    if (this.trimAuditionTimer) {
+      clearTimeout(this.trimAuditionTimer);
+      this.trimAuditionTimer = null;
+    }
+    if (this.trimAuditionSources && this.trimAuditionSources.length > 0) {
+      for (const src of this.trimAuditionSources) {
+        try {
+          src.stop();
+          src.disconnect();
+        } catch (e) {}
+      }
+      this.trimAuditionSources = [];
+    }
+    this.isAuditioningTrim = false;
+    if (this.btnAuditionTrim) {
+      this.btnAuditionTrim.textContent = "🔊 試聽起點 (播 2 秒)";
+      this.btnAuditionTrim.style.background = "#0284c7";
+    }
+  }
+
+  startTrimAudition() {
+    if (!this.audioCtx) return;
+    if (this.audioCtx.state === "suspended") this.audioCtx.resume();
+    if (this.isPlaying) this.pause();
+
+    this.stopTrimAudition();
+
+    const startSec = Math.max(0, this.currentTrimCutSec || 0);
+    const auditionDuration = 2.0;
+
+    this.isAuditioningTrim = true;
+    if (this.btnAuditionTrim) {
+      this.btnAuditionTrim.textContent = "⏹️ 停止試聽";
+      this.btnAuditionTrim.style.background = "#dc2626";
+    }
+
+    const anySolo = this.tracks.some((t) => t.solo && !t.hiddenByTree);
+
+    for (const t of this.tracks) {
+      if (!t.audioBuffer) continue;
+      const isAudible = !t.hiddenByTree && (anySolo ? t.solo && !t.mute : !t.mute);
+      if (!isAudible) continue;
+
+      const src = this.audioCtx.createBufferSource();
+      src.buffer = t.audioBuffer;
+
+      if (t.gainNode) {
+        src.connect(t.gainNode);
+      } else {
+        src.connect(this.audioCtx.destination);
+      }
+
+      try {
+        src.start(0, startSec, auditionDuration);
+        this.trimAuditionSources.push(src);
+      } catch (err) {
+        console.warn("Audition error:", err);
+      }
+    }
+
+    this.trimAuditionTimer = setTimeout(() => {
+      this.stopTrimAudition();
+    }, auditionDuration * 1000 + 50);
+  }
+
   openTrimSilenceModal() {
     if (!this.tracks || this.tracks.length === 0) {
       alert("請先載入或分離一首歌曲！");
@@ -2451,171 +2973,147 @@ class StemForgeDawApp {
     }
     if (!this.trimSilenceModal) return;
 
-    if (this.trimDetectInfo) {
-      this.trimDetectInfo.textContent = "🔍 正在掃描音訊開頭波形與拍點能量...";
-    }
+    if (this.isPlaying) this.pause();
+    this.stopTrimAudition();
+
     this.trimSilenceModal.classList.add("active");
 
+    if (this.trimDetectInfo) {
+      this.trimDetectInfo.innerHTML = "🔍 正在進行暫態躍變與底噪分析，精確定位首個音符瞬間...";
+    }
+
     setTimeout(() => {
-      const res = this.analyzeLeadingSilence();
-      this.currentTrimAnalysis = res;
+      const onsetSec = this.analyzeAccurateOnset();
+      this.detectedOnsetSec = onsetSec;
 
-      if (!res || !res.hasSilence) {
-        if (this.trimDetectInfo) {
-          this.trimDetectInfo.innerHTML = `✅ <strong>開頭已極度緊湊！</strong><br>首個音符在 <code>${(res ? res.firstSoundSec : 0).toFixed(3)}s</code>，未偵測到顯著前置死靜音。`;
-        }
-        if (this.trimAmountDisplay) this.trimAmountDisplay.textContent = "0.00 秒";
+      const bpm = this.getCurrentBpm() || 120;
+      const beatSec = 60.0 / bpm;
+
+      let defaultCut = 0;
+      let initialPreset = "tight";
+      if (this.leadTrimSec && this.leadTrimSec > 0) {
+        defaultCut = this.leadTrimSec;
+        initialPreset = null;
       } else {
-        const bpm = this.getCurrentBpm();
-        if (this.trimDetectInfo) {
-          if (res.isPickup) {
-            this.trimDetectInfo.innerHTML = `💡 <strong>偵測到弱起拍（約倒數第 ${res.pickupBeats || 1} 拍起音）！</strong><br>` +
-              `• 首個音符於 <code>${res.firstSoundSec.toFixed(2)}s</code> 起唱 / 演奏<br>` +
-              `• 首個重拍 (Downbeat) 於 <code>${res.downbeatSec.toFixed(2)}s</code> 落下 (BPM: ${bpm})<br>` +
-              `👉 建議使用「<strong>🎯 智慧對齊第 1 拍</strong>」：將自動切除 <code>${res.beat1TrimSec.toFixed(2)}s</code> 前置死靜音，並完美預留弱起拍進場空間，與節拍器 100% 嚴絲合縫對齊！`;
-          } else {
-            this.trimDetectInfo.innerHTML = `💡 <strong>偵測到正拍起音！</strong><br>` +
-              `• 首個音符於 <code>${res.firstSoundSec.toFixed(2)}s</code> 響起 (BPM: ${bpm})<br>` +
-              `• 前置死靜音約 <code>${res.beat1TrimSec.toFixed(2)}s</code>。`;
-          }
-        }
-
-        const isBeat1 = this.radioTrimBeat1 && this.radioTrimBeat1.checked;
-        const trimSec = isBeat1 ? res.beat1TrimSec : res.tightTrimSec;
-        if (this.trimAmountDisplay) this.trimAmountDisplay.textContent = `${trimSec.toFixed(2)} 秒`;
+        defaultCut = Math.max(0, onsetSec - 0.015);
+        initialPreset = "tight";
       }
+
+      // 動態設定可視視野 trimMaxViewSec：至少涵蓋起音點後 3 秒，最少 6 秒
+      let neededView = onsetSec > 0 ? onsetSec + 3.0 : 6.0;
+      if (this.leadTrimSec && this.leadTrimSec > 0) {
+        neededView = Math.max(neededView, this.leadTrimSec + 2.5);
+      }
+      this.trimMaxViewSec = Math.max(6.0, Math.min(this.durationSec || 60.0, Math.ceil(neededView * 2) / 2));
+      this.updateTrimWaveformHeader();
+
+      if (this.trimDetectInfo) {
+        if (onsetSec > 0.04) {
+          this.trimDetectInfo.innerHTML =
+            `💡 <strong>高精度躍變起音定位：</strong>首個音符於 <code>${onsetSec.toFixed(3)}s</code> 響起 (BPM: <strong>${bpm}</strong>，每拍 ${(beatSec * 1000).toFixed(0)}ms)<br>` +
+            `• <strong>弱起搶拍提示：</strong>若本曲開頭有半拍或末拍搶音進歌，請點下方弱起快捷鍵預留拍數；<br>` +
+            `• <strong>可視化起點微調：</strong>可直接點選/拖曳波形綠線，並點擊右方 <strong>[ 🔊 試聽起點 ]</strong> 親耳確認無誤後套用！`;
+        } else {
+          this.trimDetectInfo.innerHTML =
+            `✅ <strong>開頭已極度緊湊！</strong>首個音符在 <code>${onsetSec.toFixed(3)}s</code>，未發現顯著死靜音。<br>` +
+            `您仍可直接在下方波形手動微調或預留弱起空間。`;
+        }
+      }
+
+      this.setTrimCutSec(defaultCut, initialPreset);
     }, 60);
   }
 
   closeTrimSilenceModal() {
+    this.stopTrimAudition();
     if (this.trimSilenceModal) {
       this.trimSilenceModal.classList.remove("active");
     }
   }
 
-  analyzeLeadingSilence() {
-    if (!this.tracks || this.tracks.length === 0) return null;
+  analyzeAccurateOnset() {
+    if (!this.tracks || this.tracks.length === 0) return 0;
 
     const sampleRate = this.tracks[0].audioBuffer.sampleRate || 44100;
-    const scanSeconds = Math.min(15, this.durationSec || 15);
-    const scanSamples = Math.floor(scanSeconds * sampleRate);
-    const blockSize = Math.floor(sampleRate * 0.01); // 10ms block
-    const numBlocks = Math.floor(scanSamples / blockSize);
+    // 支援超長前奏靜音掃描（擴展至 60 秒，涵蓋大於 4 秒、10 秒甚至長錄音）
+    const scanSec = Math.min(60.0, this.durationSec || 60.0);
+    const hopSize = Math.floor(sampleRate * 0.005); // 5ms 解析度
+    const numFrames = Math.floor((scanSec * sampleRate) / hopSize);
+    if (numFrames <= 0) return 0;
 
-    const peaks = new Float32Array(numBlocks);
+    const energies = new Float32Array(numFrames);
 
-    let drumBuffer = null;
-    let bassBuffer = null;
+    // Sum energies across active tracks
     for (const t of this.tracks) {
-      const id = t.nodeId.toLowerCase();
-      if (id.includes("drum") && !id.includes("hihat") && !id.includes("cymbals")) {
-        drumBuffer = t.audioBuffer;
-      } else if (id.includes("bass")) {
-        bassBuffer = t.audioBuffer;
-      }
-    }
-
-    for (const t of this.tracks) {
-      if (!t.audioBuffer) continue;
+      if (!t.audioBuffer || t.hiddenByTree) continue;
       const ch0 = t.audioBuffer.getChannelData(0);
       const ch1 = t.audioBuffer.numberOfChannels > 1 ? t.audioBuffer.getChannelData(1) : ch0;
-      const maxS = Math.min(scanSamples, ch0.length);
+      const maxLen = Math.min(ch0.length, Math.floor(scanSec * sampleRate));
 
-      for (let b = 0; b < numBlocks; b++) {
-        const start = b * blockSize;
-        const end = Math.min(start + blockSize, maxS);
-        let maxVal = 0;
-        for (let s = start; s < end; s += 4) {
+      for (let f = 0; f < numFrames; f++) {
+        const start = f * hopSize;
+        const end = Math.min(start + hopSize, maxLen);
+        if (start >= maxLen) break;
+        let sumSq = 0;
+        let count = 0;
+        for (let s = start; s < end; s += 2) {
           const v = Math.max(Math.abs(ch0[s]), Math.abs(ch1[s]));
-          if (v > maxVal) maxVal = v;
+          sumSq += v * v;
+          count++;
         }
-        if (maxVal > peaks[b]) peaks[b] = maxVal;
+        if (count > 0) {
+          const rms = Math.sqrt(sumSq / count);
+          if (rms > energies[f]) energies[f] = rms;
+        }
       }
     }
 
-    const silenceThreshold = 0.0045; // 約 -47 dBFS
-    let firstSoundBlock = -1;
-    for (let b = 0; b < numBlocks; b++) {
-      if (peaks[b] > silenceThreshold) {
-        firstSoundBlock = b;
+    // Step 1: 穩健估算安靜底噪基準 (取前 2 秒或前 400 幀中的最小滾動 RMS，防止開頭微小 Pop 聲干擾)
+    let minNoiseRms = 1.0;
+    const initScanFrames = Math.min(400, numFrames);
+    for (let f = 0; f < initScanFrames; f += 5) {
+      let localAvg = 0;
+      let cnt = 0;
+      for (let k = f; k < Math.min(f + 10, initScanFrames); k++) {
+        localAvg += energies[k];
+        cnt++;
+      }
+      localAvg /= Math.max(1, cnt);
+      if (localAvg < minNoiseRms) minNoiseRms = localAvg;
+    }
+    const noiseFloor = Math.max(0.0008, Math.min(0.02, minNoiseRms * 2.0));
+
+    // Step 2: 半波整流階躍躍變偵測 (Transient & Energy Jump Detection)
+    let detectedSec = 0;
+    for (let f = 1; f < numFrames - 3; f++) {
+      const delta = energies[f] - energies[f - 1];
+      const isAboveNoise = energies[f] > Math.max(noiseFloor * 1.8, 0.003);
+      const isJump = delta > Math.max(0.003, noiseFloor * 1.5) || energies[f] > 0.015;
+      const isSustained = energies[f + 1] > noiseFloor * 1.2 && energies[f + 2] > noiseFloor * 1.2;
+
+      if (isAboveNoise && isJump && isSustained) {
+        detectedSec = f * 0.005;
         break;
       }
     }
 
-    if (firstSoundBlock === -1) {
-      return { hasSilence: false, firstSoundSec: 0, beat1TrimSec: 0, tightTrimSec: 0 };
-    }
-
-    const firstSoundSec = Math.max(0, (firstSoundBlock * blockSize) / sampleRate);
-    const tightTrimSec = Math.max(0, firstSoundSec - 0.025);
-
-    const bpm = this.getCurrentBpm();
-    const beatSec = 60.0 / bpm;
-    const barSec = beatSec * 4;
-
-    let downbeatSec = firstSoundSec;
-    let maxRhythmEnergy = 0;
-
-    const rhythmSource = drumBuffer || bassBuffer || (this.tracks[0] ? this.tracks[0].audioBuffer : null);
-    if (rhythmSource) {
-      const ch = rhythmSource.getChannelData(0);
-      const searchStart = Math.floor(firstSoundSec * sampleRate);
-      const searchEnd = Math.min(ch.length, Math.floor((firstSoundSec + barSec) * sampleRate));
-
-      for (let s = searchStart; s < searchEnd; s += blockSize) {
-        let blockSum = 0;
-        const subEnd = Math.min(s + blockSize, searchEnd);
-        for (let i = s; i < subEnd; i += 4) {
-          blockSum += Math.abs(ch[i]);
-        }
-        if (blockSum > maxRhythmEnergy) {
-          maxRhythmEnergy = blockSum;
-          downbeatSec = s / sampleRate;
+    // Step 3: 若前奏為緩慢漸入 (Fade-in / Ambient Pad) 未產生急劇突波，執行第二道平滑門檻偵測
+    if (detectedSec === 0) {
+      for (let f = 0; f < numFrames - 2; f++) {
+        if (energies[f] > Math.max(noiseFloor * 2.5, 0.005) && energies[f + 1] > Math.max(noiseFloor * 2.0, 0.004)) {
+          detectedSec = f * 0.005;
+          break;
         }
       }
     }
 
-    const diffSec = downbeatSec - firstSoundSec;
-    let beat1TrimSec = 0;
-    let isPickup = false;
-    let pickupBeats = 0;
-
-    if (diffSec > beatSec * 0.4) {
-      isPickup = true;
-      pickupBeats = Math.max(1, Math.round(diffSec / beatSec));
-      let measureStart = downbeatSec - barSec;
-      while (measureStart < 0) {
-        measureStart += beatSec;
-      }
-      if (measureStart <= firstSoundSec && measureStart >= 0) {
-        beat1TrimSec = Math.max(0, measureStart);
-      } else {
-        beat1TrimSec = Math.max(0, firstSoundSec - (barSec - diffSec));
-      }
-    } else {
-      beat1TrimSec = tightTrimSec;
-    }
-
-    return {
-      hasSilence: firstSoundSec >= 0.08,
-      firstSoundSec,
-      downbeatSec,
-      isPickup,
-      pickupBeats,
-      beat1TrimSec: Math.round(beat1TrimSec * 100) / 100,
-      tightTrimSec: Math.round(tightTrimSec * 100) / 100
-    };
+    return Math.round(detectedSec * 1000) / 1000;
   }
 
   confirmTrimSilence() {
-    if (!this.currentTrimAnalysis) {
-      this.closeTrimSilenceModal();
-      return;
-    }
-    const isBeat1 = this.radioTrimBeat1 && this.radioTrimBeat1.checked;
-    const sec = isBeat1 ? this.currentTrimAnalysis.beat1TrimSec : this.currentTrimAnalysis.tightTrimSec;
+    this.stopTrimAudition();
     this.closeTrimSilenceModal();
-    this.applyLeadTrim(sec, true);
+    this.applyLeadTrim(this.currentTrimCutSec, true);
   }
 
   applyLeadTrim(sec, showToast = true) {

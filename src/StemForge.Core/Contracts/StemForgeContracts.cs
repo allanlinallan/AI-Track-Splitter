@@ -68,7 +68,7 @@ public sealed record StemTrackResult
     public required string DisplayName { get; init; }
     public required string GroupCategory { get; init; }
     public required string ColorHex { get; init; }
-    public required string FilePath { get; init; }
+    public required string FilePath { get; set; }
     public required string RelativeUrl { get; set; }
     public string? MidiRelativeUrl { get; set; }
     public string? MidiFilePath { get; set; }

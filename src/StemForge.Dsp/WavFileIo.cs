@@ -307,6 +307,71 @@ public static class WavFileIo
     }
 
     /// <summary>
+    /// 在立體聲緩衝區前置增加一小節節拍器預備拍 (Count-in 1 bar with Metronome clicks)
+    /// </summary>
+    public static StereoAudioBuffer PrependCountInBar(StereoAudioBuffer source, double bpm, double pickupBeats = 0.0)
+    {
+        if (bpm <= 20) bpm = 120.0;
+        int sr = source.SampleRate;
+        double beatSec = 60.0 / bpm;
+
+        // 計算音樂進場前的前置秒數：若有弱起拍，音樂提早進場 (例: pickupBeats = 1 -> musicLeadSec = 3 * beatSec)
+        double musicLeadSec = Math.Max(0, (4.0 - pickupBeats) * beatSec);
+        int musicLeadSamples = (int)(musicLeadSec * sr);
+        int totalLen = musicLeadSamples + source.Length;
+
+        var newL = new float[totalLen];
+        var newR = new float[totalLen];
+
+        // 1. 將 4 拍節拍器聲音合成至前置小節 (拍 1 為高音重音，拍 2/3/4 為次重音)
+        for (int b = 0; b < 4; b++)
+        {
+            int clickStartSample = (int)(b * beatSec * sr);
+            bool isAccent = (b == 0);
+            SynthesizeMetronomeClick(newL, newR, sr, clickStartSample, isAccent);
+        }
+
+        // 2. 將原始音樂拷貝至 musicLeadSamples 位置並混音累加
+        for (int i = 0; i < source.Length; i++)
+        {
+            int dest = musicLeadSamples + i;
+            if (dest < totalLen)
+            {
+                newL[dest] += source.Left[i];
+                newR[dest] += source.Right[i];
+            }
+        }
+
+        return new StereoAudioBuffer(sr, newL, newR);
+    }
+
+    private static void SynthesizeMetronomeClick(float[] left, float[] right, int sampleRate, int startSample, bool isAccent)
+    {
+        float baseFreq = isAccent ? 1760f : 880f;
+        float startVol = isAccent ? 0.85f : 0.55f;
+        float durationSec = isAccent ? 0.045f : 0.030f;
+        int clickSamples = Math.Min((int)(durationSec * sampleRate), left.Length - startSample);
+
+        double phase = 0.0;
+        for (int i = 0; i < clickSamples; i++)
+        {
+            double t = (double)i / sampleRate;
+            double curFreq = baseFreq * Math.Pow(0.4, t / 0.035);
+            phase += 2.0 * Math.PI * curFreq / sampleRate;
+
+            double env = startVol * Math.Exp(-t * 9.0 / durationSec);
+            float sample = (float)(Math.Sin(phase) * env);
+
+            int destIdx = startSample + i;
+            if (destIdx >= 0 && destIdx < left.Length)
+            {
+                left[destIdx] += sample;
+                right[destIdx] += sample;
+            }
+        }
+    }
+
+    /// <summary>
     /// 使用 FFmpeg 將 WAV 轉碼為指定碼率的高音質 MP3 (預設 320kbps CBR)
     /// </summary>
     public static void ConvertWavToMp3(string inputWavPath, string outputMp3Path, int bitrateKbps = 320)

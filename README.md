@@ -1,9 +1,9 @@
 # StemForge Studio 🎵
-### 19+ 軌高純度 AI 音樂分離工作站 & WebAudio 多軌混音 DAW (v2.0 進階版)
-**19+ Stem AI Multitrack Audio Separation Studio & WebAudio DAW (v2.0 Release)**
+### 19+ 軌高純度 AI 音樂分離工作站 & WebAudio 多軌混音 DAW (v2.0.1 發布版)
+**19+ Stem AI Multitrack Audio Separation Studio & WebAudio DAW (v2.0.1 Release)**
 
-[![Release](https://img.shields.io/badge/Release-v2.0.0--Pro-brightgreen.svg)](https://github.com/allanlinallan/AI-Track-Splitter/releases/tag/v2.0)
-[![.NET 9.0](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/)
+[![Release](https://img.shields.io/badge/Release-v2.0.1--Portable-brightgreen.svg)](https://github.com/allanlinallan/AI-Track-Splitter/releases/tag/v2.0.1)
+[![.NET 9.0](https://img.shields.io/badge/.NET-9.0--Self--Contained-purple.svg)](https://dotnet.microsoft.com/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7%2Bcu118-red.svg)](https://pytorch.org/)
 [![Demucs](https://img.shields.io/badge/Demucs-v4.1.0-blue.svg)](https://github.com/facebookresearch/demucs)
 [![UVR ONNX](https://img.shields.io/badge/UVR-ONNX%20MDX--Net-orange.svg)](https://github.com/nomadkaraoke/python-audio-separator)
@@ -15,8 +15,23 @@
 
 ---
 
+### 📦 v2.0.1 獨立免安裝發布版 (Portable Win-x64)
+
+> **全套離線 AI 模型已 100% 內建封裝：**  
+> 模型位於 `workspace_data\models\`，包含：  
+> - `UVR_MDXNET_KARA_2.onnx`（人聲/和聲分離）  
+> - `Reverb_HQ_By_FoxJoy.onnx`（乾音/殘響分離）  
+> - `huggingface\hub\models--adefossez--HTDemucs`（4-Stem 離線模型）  
+> - `huggingface\hub\models--adefossez--HTDemucs-6s`（6-Stem 離線模型，含吉他/鋼琴）  
+> 
+> **新電腦無需連外網下載模型即可離線運算。**  
+> **附帶防呆檢測與教學手冊：**  
+> 內含 `模型安裝與檢測_Setup_Models.bat`、`模型放置說明_MODELS_SETUP.md` 與繁中 `README.txt`。
+
+---
+
 <a name="繁體中文"></a>
-## 🇹🇼 繁體中文全功能說明 (v2.0 進階大改版)
+## 🇹🇼 繁體中文全功能說明 (v2.0.1 進階大改版)
 
 **StemForge Studio 2.0** 是一個專為音樂製作人、音訊工程師與 AI 研究者打造的高純度 19+ 軌 AI 音樂分離與母帶級 WebAudio 多軌 DAW 系統。  
 結合 **C# .NET 9.0 高效能 SIMD DSP 向量運算引擎** 與 **Python NVIDIA GPU 4-Pass 深度神經網路級聯架構**，具備毫秒級多軌混音、非破壞性波形剪輯與消音、專案狀態持久化儲存、以及數學級反相抵消驗證（Null Test）。

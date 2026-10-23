@@ -61,24 +61,31 @@
 8. [第八步：原曲調性辨識與多軌神經變調變速](#8-第八步原曲調性辨識與多軌神經變調變速)
 9. [第九步：全套匯出管道與 WAV/MP3 即時合併](#9-第九步全套匯出管道與-wavmp3-即時合併)
 10. [第十步：歷史專案 0 秒即時回載與 URL 分享](#10-第十步歷史專案-0-秒即時回載與-url-分享)
-11. [常見問題與疑難排解 (FAQ)](#11-常見問題與疑難排解-faq)
+11. [第十一步：AI 模型庫放置與離線部署指引](#11-第十一步ai-模型庫放置與離線部署指引)
+12. [常見問題與疑難排解 (FAQ)](#12-常見問題與疑難排解-faq)
 
 ---
 
 ## 1. 第一步：啟動工作站與硬體感知
 
 ### 1.1 啟動方式
-解壓縮 `StemForge_v2.0.0_Portable_Win64.zip` 後，資料夾內包含以下重要檔案：
+解壓縮 `StemForge_Portable_Win64.zip` 後，資料夾內包含以下重要檔案：
 
 ```text
-StemForge_v2.0.0_Portable_Win64/
-├── Start_StemForge_Studio.bat    <-- 雙擊這個啟動工作站！
-├── StemForge.Web.exe             <-- .NET 9.0 高效能後端
-├── ai_engine/                    <-- Python AI 深度學習推理腳本
+StemForge_Portable_Win64/
+├── Start_StemForge_Studio.bat          <-- 雙擊這個啟動工作站！
+├── 模型安裝與檢測_Setup_Models.bat     <-- 一鍵檢驗/安裝 AI 模型
+├── Install_GPU_Environment.bat         <-- NVIDIA GPU 深度神經環境配置腳本
+├── StemForge.Web.exe                   <-- .NET 9.0 高效能後端服務
+├── ai_engine/                          <-- Python AI 深度學習推理引擎
 │   ├── stemforge_cli.py
-│   ├── requirements.txt
-│   └── setup_ai_env.ps1
-└── wwwroot/                      <-- 現代化多軌 DAW 網頁界面
+│   └── requirements.txt
+├── workspace_data/
+│   └── models/                         <-- 【★ AI 模型標準存放處】
+│       ├── UVR_MDXNET_KARA_2.onnx      <-- 主唱/和聲分離 ONNX 模型
+│       ├── Reverb_HQ_By_FoxJoy.onnx    <-- 純乾音/殘響分離 ONNX 模型
+│       └── huggingface/hub/            <-- Demucs v4 (4-Stem / 6-Stem) 離線主幹模型庫
+└── wwwroot/                            <-- 現代化多軌 DAW 網頁界面
 ```
 
 直接雙擊 **`Start_StemForge_Studio.bat`**，系統將在 2 秒後自動打開瀏覽器並連線至：  
@@ -245,7 +252,35 @@ StemForge_v2.0.0_Portable_Win64/
 
 ---
 
-## 11. 常見問題與疑難排解 (FAQ)
+## 11. 第十一步：AI 模型庫放置與離線部署指引
+
+StemForge Studio 採用完全模組化、可攜式的 AI 模型架構。所有深度神經模型均統一存放在指定目錄，實現 100% 離線推論：
+
+### 11.1 模型標準目錄結構
+標準存放路徑為：`workspace_data\models\`
+```text
+workspace_data/models/
+├── UVR_MDXNET_KARA_2.onnx      <-- (52.7 MB) 人聲與合音極限分離模型
+├── Reverb_HQ_By_FoxJoy.onnx    <-- (66.7 MB) 乾音與殘響消除模型
+├── mdx_model_data.json         <-- 網路結構與取樣率參數
+├── vr_model_data.json          <-- 模型設定檔
+├── download_checks.json        <-- 檔案校驗雜湊
+└── huggingface/hub/            <-- Demucs v4 離線模型快取庫
+    ├── models--adefossez--HTDemucs/    <-- 4-Stem 主幹分離模型
+    └── models--adefossez--HTDemucs-6s/ <-- 6-Stem 細分分離模型 (含吉他/鋼琴)
+```
+
+### 11.2 解壓縮後如何安裝或確認模型？
+1. **內建完整版**：免安裝壓縮包已直接預置上述全部模型，解壓縮即可直接使用。
+2. **獨立模型包 (models.zip)**：
+   - 若您單獨下載了模型壓縮包，可直接將其解壓在工作站根目錄的 `models\` 資料夾下。
+   - 雙擊執行根目錄的 **`模型安裝與檢測_Setup_Models.bat`**，腳本將自動識別並將模型遷移至標準目錄 `workspace_data\models\`！
+3. **一鍵完整性檢查**：
+   - 執行 **`模型安裝與檢測_Setup_Models.bat`**，若顯示 `[✔]` 代表全套模型已具備，可在無網路環境下直接運算。
+
+---
+
+## 12. 常見問題與疑難排解 (FAQ)
 
 ### Q1：消音片段另存新專案後，重新載入會保留消音設定嗎？
 * **完全會！** v2.0 專案持久化引擎會在另存新專案時，將所有軌道的裁切斷點與局部消音片段（`muted: true`）完整序列化至 `project_state.json`，重新載入 100% 完整還原。

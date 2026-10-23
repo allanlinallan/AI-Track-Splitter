@@ -23,6 +23,7 @@
       <div class="hw-pill">VRAM: <strong id="vramUsageText">-- / -- MB</strong></div>
       <div class="hw-pill">磁碟可用: <strong id="diskFreeText">-- GB</strong></div>
       <div class="hw-pill" id="engineModePill">AI CLI + C# SIMD Ready</div>
+      <a href="/docs/USER_GUIDE.html" target="_blank" class="hw-pill" style="text-decoration: none; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700; cursor: pointer;" title="在新分頁開啟完整使用手冊">📖 使用手冊</a>
     </div>
   </header>
 
@@ -150,6 +151,12 @@
               <input type="checkbox" id="chkCountIn" />
               <span>⏳ 空一小節 (預拍)</span>
             </label>
+            <select id="selCountInPickup" class="metro-select" title="弱起拍進歌點：設定音樂在預備小節的第幾拍進場發聲" style="display: none;">
+              <option value="0">🎯 正拍進歌 (第 1 拍)</option>
+              <option value="0.5">🎵 倒數半拍 (搶拍)</option>
+              <option value="1">🎵 倒數 1 拍 (第 4 拍進歌)</option>
+              <option value="2">🎵 倒數 2 拍 (第 3 拍進歌)</option>
+            </select>
             <label class="metro-toggle-label" title="播放時依照歌曲 BPM 速度同步敲打節拍器（每小節第一拍高音重音，2/3/4 拍次重音）">
               <input type="checkbox" id="chkMetronome" />
               <span>🔔 節拍器 (BPM)</span>
@@ -185,7 +192,40 @@
         <!-- AI 神經變調控制組 (原調偵測 + ±6半音升降桿 + 一鍵恢復) -->
         <div class="pitch-shift-panel" id="pitchShiftPanel">
           <div class="pitch-key-info">
-            <span class="pitch-badge-orig" id="detectedKeyBadge" title="AI 辨識歌曲原始調性">原調: --</span>
+            <div style="position: relative; display: inline-flex; align-items: center;">
+              <span class="pitch-badge-orig" id="detectedKeyBadge" title="點擊直接修改原調（以大調為主）" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none; border: 1px solid rgba(56, 189, 248, 0.6); background: rgba(56, 189, 248, 0.15); padding: 3px 8px; border-radius: 4px;">原調: -- ▾ <span style="font-size: 10px; color: #38bdf8;">[點擊修改]</span></span>
+              <select id="keyOverrideSelect" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;" title="點擊選擇原調 (以大調為主)">
+                <option value="" disabled selected>-- 選擇原調 (以大調為主) --</option>
+                <optgroup label="🎵 常用大調 (Major)">
+                  <option value="C Major|C 大調 (C Major)">C 大調 (C Major)</option>
+                  <option value="C# Major|C# / Db 大調 (C# Major)">C# / Db 大調</option>
+                  <option value="D Major|D 大調 (D Major)">D 大調 (D Major)</option>
+                  <option value="D# Major|D# / Eb 大調 (Eb Major)">D# / Eb 大調</option>
+                  <option value="E Major|E 大調 (E Major)">E 大調 (E Major)</option>
+                  <option value="F Major|F 大調 (F Major)">F 大調 (F Major)</option>
+                  <option value="F# Major|F# / Gb 大調 (F# Major)">F# / Gb 大調</option>
+                  <option value="G Major|G 大調 (G Major)">G 大調 (G Major)</option>
+                  <option value="G# Major|G# / Ab 大調 (Ab Major)">G# / Ab 大調</option>
+                  <option value="A Major|A 大調 (A Major)">A 大調 (A Major)</option>
+                  <option value="A# Major|A# / Bb 大調 (Bb Major)">A# / Bb 大調</option>
+                  <option value="B Major|B 大調 (B Major)">B 大調 (B Major)</option>
+                </optgroup>
+                <optgroup label="🎼 小調 (Minor)">
+                  <option value="A Minor|A 小調 (A Minor)">A 小調 (A Minor)</option>
+                  <option value="E Minor|E 小調 (E Minor)">E 小調 (E Minor)</option>
+                  <option value="B Minor|B 小調 (B Minor)">B 小調 (B Minor)</option>
+                  <option value="F# Minor|F# 小調 (F# Minor)">F# 小調 (F# Minor)</option>
+                  <option value="C# Minor|C# 小調 (C# Minor)">C# 小調 (C# Minor)</option>
+                  <option value="G# Minor|G# 小調 (G# Minor)">G# 小調 (G# Minor)</option>
+                  <option value="D# Minor|D# 小調 (D# Minor)">D# 小調 (D# Minor)</option>
+                  <option value="D Minor|D 小調 (D Minor)">D 小調 (D Minor)</option>
+                  <option value="G Minor|G 小調 (G Minor)">G 小調 (G Minor)</option>
+                  <option value="C Minor|C 小調 (C Minor)">C 小調 (C Minor)</option>
+                  <option value="F Minor|F 小調 (F Minor)">F 小調 (F Minor)</option>
+                  <option value="A# Minor|A# / Bb 小調 (Bb Minor)">A# / Bb 小調</option>
+                </optgroup>
+              </select>
+            </div>
             <span class="pitch-arrow">➔</span>
             <span class="pitch-badge-target" id="targetKeyBadge" title="當前變調目標調性">目標: 原調 (0)</span>
           </div>
@@ -303,51 +343,63 @@
 
   <!-- ✂️ AI 自動切齊開頭靜音彈窗 (Auto Trim Silence Modal) -->
   <div class="history-modal" id="trimSilenceModal">
-    <div class="history-modal-content" style="max-width: 540px; border: 1px solid #10b981; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
+    <div class="history-modal-content" style="max-width: 680px; border: 1px solid #10b981; box-shadow: 0 10px 35px rgba(0,0,0,0.7);">
       <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
-        <h3 style="color: #34d399; display: flex; align-items: center; gap: 8px;">✂️ AI 自動切齊開頭靜音 (Auto-Trim Silence)</h3>
+        <h3 style="color: #34d399; display: flex; align-items: center; gap: 8px;">✂️ 精確切齊開頭靜音與弱起拍設定</h3>
         <button class="btn-close" id="btnCloseTrimSilence">&times;</button>
       </div>
-      <div style="padding: 24px;">
-        <div id="trimDetectInfo" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 14px; color: #a7f3d0; font-size: 0.9rem; margin-bottom: 18px; line-height: 1.5;">
-          正在掃描開頭波形與拍點能量...
+      <div style="padding: 20px 24px;">
+        <div id="trimDetectInfo" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; color: #a7f3d0; font-size: 0.88rem; margin-bottom: 14px; line-height: 1.45;">
+          正在掃描開頭波形暫態能量...
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
-          <label id="optLabelTrimBeat1" style="display: flex; gap: 12px; align-items: flex-start; background: #0f172a; border: 2px solid #10b981; border-radius: 8px; padding: 14px; cursor: pointer;">
-            <input type="radio" name="trimModeRadio" id="radioTrimBeat1" value="beat1" checked style="margin-top: 3px; accent-color: #10b981;" />
-            <div>
-              <div style="color: #f1f5f9; font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">🎯 智慧對齊第 1 拍 (推薦：適合對拍 / 預備拍)</div>
-              <div style="color: #94a3b8; font-size: 0.85rem; line-height: 1.4;">
-                結合 BPM 拍速與鼓組/重音偵測，自動辨識弱起小節（最後一拍或半拍搶拍起音），將起點切在小節第 1 拍，節拍器與預拍一小節 100% 嚴絲合縫對齊！
-              </div>
-            </div>
-          </label>
-
-          <label id="optLabelTrimTight" style="display: flex; gap: 12px; align-items: flex-start; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px; cursor: pointer;">
-            <input type="radio" name="trimModeRadio" id="radioTrimTight" value="tight" style="margin-top: 3px; accent-color: #10b981;" />
-            <div>
-              <div style="color: #f1f5f9; font-weight: 700; font-size: 0.95rem; margin-bottom: 4px;">⚡ 緊貼第一聲起音 (Tight Cut)</div>
-              <div style="color: #94a3b8; font-size: 0.85rem; line-height: 1.4;">
-                直接切齊第一個音符波形開頭（預留 20ms 防爆音呼吸空間），完全不留任何前奏空白。
-              </div>
-            </div>
-          </label>
+        <!-- 視覺化波形放大區間與可拖曳起點游標 -->
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span id="trimWaveformHeaderLabel" style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">前奏波形視覺放大 — 可直接點擊波形調整起點：</span>
+            <button type="button" class="btn" id="btnAuditionTrim" style="background: #0284c7; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; font-size: 0.82rem; font-weight: 700; cursor: pointer;">🔊 試聽起點 (播 2 秒)</button>
+          </div>
+          <div style="position: relative; width: 100%; height: 95px; background: #070a12; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden;">
+            <canvas id="trimWaveformCanvas" height="95" style="width: 100%; height: 100%; display: block; cursor: crosshair;"></canvas>
+          </div>
         </div>
 
-        <div style="background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 14px; font-size: 0.88rem; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <span>預計切除前置空白：</span>
-          <strong id="trimAmountDisplay" style="color: #38bdf8; font-size: 1.1rem; font-family: Consolas, monospace;">0.00 秒</strong>
+        <!-- 弱起小節拍數快捷預留 -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 0.84rem; color: #cbd5e1; font-weight: 700; margin-bottom: 8px;">🎵 弱起拍（Pickup）依 BPM 拍數快捷預留：</div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="trimPresetButtons">
+            <button type="button" class="trim-preset-btn active" data-preset="tight">⚡ 緊貼起音 (0 拍)</button>
+            <button type="button" class="trim-preset-btn" data-preset="half">留半拍 (搶拍)</button>
+            <button type="button" class="trim-preset-btn" data-preset="1beat">留 1 拍 (末拍進歌)</button>
+            <button type="button" class="trim-preset-btn" data-preset="2beats">留 2 拍</button>
+            <button type="button" class="trim-preset-btn" data-preset="1bar">留 1 小節 (4 拍)</button>
+          </div>
+        </div>
+
+        <!-- 毫秒級精確微調控制列 -->
+        <div style="background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.88rem; color: #cbd5e1;">起點位置：</span>
+            <input type="number" id="trimManualInput" step="0.005" min="0" max="120" style="width: 85px; background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-family: Consolas, monospace; font-size: 1rem; font-weight: 700; padding: 4px 6px; border-radius: 4px; text-align: center; outline: none;" value="0.000" />
+            <span style="font-size: 0.88rem; color: #94a3b8;">秒</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <button type="button" class="btn" id="btnNudgeTrimM50" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點左移 50 毫秒">-50ms</button>
+            <button type="button" class="btn" id="btnNudgeTrimM10" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點左移 10 毫秒">-10ms</button>
+            <button type="button" class="btn" id="btnNudgeTrimP10" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點右移 10 毫秒">+10ms</button>
+            <button type="button" class="btn" id="btnNudgeTrimP50" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點右移 50 毫秒">+50ms</button>
+          </div>
         </div>
 
         <div style="display:flex; justify-content:flex-end; gap:12px;">
           <button class="btn" id="btnCancelTrimSilence" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
-          <button class="btn btn-primary" id="btnConfirmTrimSilence" style="background:#059669; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">✂️ 套用切齊</button>
+          <button class="btn btn-primary" id="btnConfirmTrimSilence" style="background:#059669; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">✂️ 確認套用切齊</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="/js/webaudio-daw.js?v=28"></script>
+  <script src="/js/webaudio-daw.js?v=36"></script>
 </body>
 </html>

@@ -102,6 +102,27 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
+// 掛載 /docs 靜態手冊與圖片目錄
+string docsDir = Path.Combine(AppContext.BaseDirectory, "docs");
+if (!Directory.Exists(docsDir))
+{
+    string fallback = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "docs");
+    if (Directory.Exists(fallback)) docsDir = Path.GetFullPath(fallback);
+}
+
+if (Directory.Exists(docsDir))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(docsDir),
+        RequestPath = "/docs",
+        ServeUnknownFileTypes = true
+    });
+}
+
+app.MapGet("/docs", () => Results.Redirect("/docs/USER_GUIDE.html"));
+app.MapGet("/manual", () => Results.Redirect("/docs/USER_GUIDE.html"));
+
 // 0. 本機音源即時預覽串流 (支援 Range Requests，即時預聽任意格式)
 app.MapGet("/api/preview/local-file", (string path) =>
 {
@@ -295,6 +316,7 @@ app.MapPost("/api/jobs/{jobId}/midi/{nodeId}", async (
     });
 });
 
+
 // 6.1. 單軌神經樂器音色風格遷移 (Audio-to-Audio Timbre Transfer)
 app.MapPost("/api/jobs/{jobId}/timbre-transfer", async (
     string jobId,
@@ -420,6 +442,10 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     string format = "wav"; // "wav" or "mp3"
     Dictionary<string, List<(double StartSec, double EndSec)>>? mutedRangesMap = null;
     double trimStartSec = 0;
+    bool hasCountIn = false;
+    double bpm = 120.0;
+    double pickupBeats = 0.0;
+    int semitones = job.CurrentPitchShift;
 
     if (httpReq.HasJsonContentType())
     {
@@ -433,6 +459,30 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
                 if (doc.RootElement.TryGetProperty("trimStartSec", out var trimEl) && trimEl.TryGetDouble(out var ts))
                 {
                     trimStartSec = Math.Max(0, ts);
+                }
+                if (doc.RootElement.TryGetProperty("hasCountIn", out var countInEl))
+                {
+                    hasCountIn = countInEl.GetBoolean();
+                }
+                if (doc.RootElement.TryGetProperty("bpm", out var bpmEl) && bpmEl.TryGetDouble(out var bpmVal) && bpmVal > 20)
+                {
+                    bpm = bpmVal;
+                }
+                else if (job.TargetBpm.HasValue && job.TargetBpm.Value > 20)
+                {
+                    bpm = job.TargetBpm.Value;
+                }
+                else if (job.DetectedBpm.HasValue && job.DetectedBpm.Value > 20)
+                {
+                    bpm = job.DetectedBpm.Value;
+                }
+                if (doc.RootElement.TryGetProperty("pickupBeats", out var pickupEl) && pickupEl.TryGetDouble(out var pbVal))
+                {
+                    pickupBeats = Math.Max(0, pbVal);
+                }
+                if (doc.RootElement.TryGetProperty("semitones", out var semiEl) && semiEl.TryGetInt32(out var sVal))
+                {
+                    semitones = sVal;
                 }
                 if (doc.RootElement.TryGetProperty("selectedNodes", out var nodesEl) && nodesEl.ValueKind == JsonValueKind.Array)
                 {
@@ -475,12 +525,47 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
         return Results.BadRequest(new { error = "請至少選擇一個音軌進行合併匯出。" });
     }
 
+    string jobDir = Path.Combine(projectsDir, jobId);
+    string stemsDir = Path.Combine(jobDir, "stems");
+
     var buffers = new List<StereoAudioBuffer>(activeStems.Count);
     foreach (var stem in activeStems)
     {
-        if (File.Exists(stem.FilePath))
+        string actualPath = stem.FilePath;
+        string fn = Path.GetFileName(stem.FilePath);
+
+        // 1. 若當前指定了變調半音數 (semitones != 0)，優先讀取 pitch_{semitones} 目錄中的變調音訊
+        if (semitones != 0)
         {
-            var buf = WavFileIo.ReadStereoAudio(stem.FilePath);
+            string pitchedCandidate = Path.Combine(jobDir, $"pitch_{semitones}", fn);
+            if (File.Exists(pitchedCandidate))
+            {
+                actualPath = pitchedCandidate;
+            }
+        }
+        else if (job.CurrentPitchShift != 0)
+        {
+            string pitchedCandidate = Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}", fn);
+            if (File.Exists(pitchedCandidate))
+            {
+                actualPath = pitchedCandidate;
+            }
+        }
+
+        // 2. 檢查 RelativeUrl 是否指向特定處理目錄 (如 /pitch_x/ 或 /tempo_x/)
+        if (!string.IsNullOrEmpty(stem.RelativeUrl) && stem.RelativeUrl.StartsWith($"/projects/{jobId}/", StringComparison.OrdinalIgnoreCase))
+        {
+            string relPart = stem.RelativeUrl.Substring($"/projects/{jobId}/".Length).TrimStart('/');
+            string diskPath = Path.Combine(jobDir, relPart.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(diskPath))
+            {
+                actualPath = diskPath;
+            }
+        }
+
+        if (File.Exists(actualPath))
+        {
+            var buf = WavFileIo.ReadStereoAudio(actualPath);
             if (mutedRangesMap != null && mutedRangesMap.TryGetValue(stem.NodeId, out var mRanges))
             {
                 foreach (var (startSec, endSec) in mRanges)
@@ -508,14 +593,19 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     {
         mixdownBuffer = WavFileIo.Slice(mixdownBuffer, trimStartSec);
     }
-    string jobDir = Path.Combine(projectsDir, jobId);
+    if (hasCountIn)
+    {
+        mixdownBuffer = WavFileIo.PrependCountInBar(mixdownBuffer, bpm, pickupBeats);
+    }
     string baseSongName = Path.GetFileNameWithoutExtension(job.OriginalFileName);
     int trackCount = activeStems.Count;
+    string pitchTag = semitones != 0 ? (semitones > 0 ? $"_升{semitones}半音" : $"_降{Math.Abs(semitones)}半音") : "";
+    string countInTag = hasCountIn ? "_預拍" : "";
 
     if (format == "mp3")
     {
         string tempWavPath = Path.Combine(Path.GetTempPath(), $"mixdown_{Guid.NewGuid():N}.wav");
-        string mp3Name = $"{baseSongName}_合併{trackCount}軌.mp3";
+        string mp3Name = $"{baseSongName}_合併{trackCount}軌{pitchTag}{countInTag}.mp3";
         string mp3Path = Path.Combine(jobDir, mp3Name);
 
         try
@@ -536,13 +626,43 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     }
     else
     {
-        string wavName = $"{baseSongName}_合併{trackCount}軌.wav";
+        string wavName = $"{baseSongName}_合併{trackCount}軌{pitchTag}{countInTag}.wav";
         string wavPath = Path.Combine(jobDir, wavName);
         WavFileIo.WriteFloat32Wav(wavPath, mixdownBuffer);
 
         string fileUrl = $"/projects/{jobId}/{Uri.EscapeDataString(wavName)}";
         return Results.Ok(new { url = fileUrl, fileName = wavName, trackCount, format = "wav" });
     }
+});
+
+// 7.55 手動校正原調 API (以大調為主，支援 1 鍵快速覆寫)
+app.MapPost("/api/jobs/{jobId}/override-key", async (
+    string jobId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    using var reader = new StreamReader(httpReq.Body);
+    var body = await reader.ReadToEndAsync(ct);
+    if (!string.IsNullOrWhiteSpace(body))
+    {
+        using var doc = JsonDocument.Parse(body);
+        string key = doc.RootElement.TryGetProperty("key", out var kProp) ? kProp.GetString() ?? "C Major" : "C Major";
+        string displayName = doc.RootElement.TryGetProperty("displayName", out var dProp) ? dProp.GetString() ?? "C 大調 (C Major)" : "C 大調 (C Major)";
+
+        job.DetectedKey = key;
+        job.DetectedKeyDisplayName = displayName;
+
+        string jobDir = Path.Combine(projectsDir, jobId);
+        string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
+        await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key, displayName }), ct);
+
+        return Results.Ok(new { key, displayName });
+    }
+    return Results.BadRequest(new { error = "無效的請求資料" });
 });
 
 // 7.6 PyTorch GPU 神經變調 API (升降半音 -6 ~ +6)
@@ -568,6 +688,11 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
         {
             string fn = Path.GetFileName(stem.FilePath);
             stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
+            string origStemFile = Path.Combine(stemsDir, fn);
+            if (File.Exists(origStemFile))
+            {
+                stem.FilePath = origStemFile;
+            }
         }
         return Results.Ok(new
         {
@@ -607,6 +732,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
         if (File.Exists(shiftedFile))
         {
             stem.RelativeUrl = $"/projects/{jobId}/pitch_{semitones}/{fn}";
+            stem.FilePath = shiftedFile;
         }
     }
 
@@ -662,11 +788,15 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
             string fn = Path.GetFileName(stem.FilePath);
             if (job.CurrentPitchShift != 0 && Directory.Exists(Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}")))
             {
+                string pitchedFile = Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}", fn);
                 stem.RelativeUrl = $"/projects/{jobId}/pitch_{job.CurrentPitchShift}/{fn}";
+                if (File.Exists(pitchedFile)) stem.FilePath = pitchedFile;
             }
             else
             {
                 stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
+                string origStemFile = Path.Combine(stemsDir, fn);
+                if (File.Exists(origStemFile)) stem.FilePath = origStemFile;
             }
         }
         return Results.Ok(new
@@ -718,6 +848,7 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
         if (File.Exists(stretchedFile))
         {
             stem.RelativeUrl = $"/projects/{jobId}/tempo_{targetBpmInt}/{fn}";
+            stem.FilePath = stretchedFile;
         }
     }
 
@@ -887,11 +1018,19 @@ static string CalculateTransposedKey(string origKey, int semitones)
 
 static string FindProjectRoot()
 {
+    // 1. 若當前目錄即為已封裝的免安裝發布包 (例如 Release_Portable)，優先採用本身目錄
+    string baseDir = AppContext.BaseDirectory;
+    if (Directory.Exists(Path.Combine(baseDir, "ai_engine")) && Directory.Exists(Path.Combine(baseDir, "wwwroot")))
+    {
+        return baseDir;
+    }
+
+    // 2. 開發環境根目錄
     string defaultDevRoot = @"D:\工作專案\GoogleAntigravity\AI音樂分軌";
     if (Directory.Exists(defaultDevRoot) && File.Exists(Path.Combine(defaultDevRoot, "StemForge.sln")))
         return defaultDevRoot;
 
-    string? curr = AppContext.BaseDirectory;
+    string? curr = baseDir;
     while (!string.IsNullOrEmpty(curr))
     {
         if (File.Exists(Path.Combine(curr, "StemForge.sln")) || Directory.Exists(Path.Combine(curr, "ai_engine")))
@@ -899,7 +1038,7 @@ static string FindProjectRoot()
         curr = Directory.GetParent(curr)?.FullName;
     }
 
-    return AppContext.BaseDirectory;
+    return baseDir;
 }
 
 app.Run();

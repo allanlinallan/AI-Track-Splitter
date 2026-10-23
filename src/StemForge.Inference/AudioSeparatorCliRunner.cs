@@ -20,7 +20,11 @@ public sealed class AudioSeparatorCliRunner
     {
         _solutionRootDir = solutionRootDir;
         _aiEngineDir = Path.Combine(solutionRootDir, "ai_engine");
-        _modelsDir = Path.Combine(workspaceDataDir, "models");
+
+        string workspaceModels = Path.Combine(workspaceDataDir, "models");
+        string rootModels = Path.Combine(solutionRootDir, "models");
+        _modelsDir = Directory.Exists(workspaceModels) ? workspaceModels : (Directory.Exists(rootModels) ? rootModels : workspaceModels);
+
         Directory.CreateDirectory(_aiEngineDir);
         Directory.CreateDirectory(_modelsDir);
     }

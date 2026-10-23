@@ -33,6 +33,8 @@ workspace_data/models/*.th
 workspace_data/models/*.pt
 workspace_data/models/*.ckpt
 workspace_data/models/hub/
+workspace_data/models/huggingface/
+workspace_data/models/*.safetensors
 
 ## Audio files generated during test/runtime
 *.wav

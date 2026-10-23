@@ -390,6 +390,9 @@ body {
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: white;
 }
+.btn-track-jianpu:hover {
+  background: #0369a1;
+}
 
 .btn-zip-selected {
   background: linear-gradient(135deg, #0284c7, #0369a1);
@@ -718,6 +721,25 @@ body {
   width: 14px;
   height: 14px;
   margin: 0;
+}
+
+.metro-select {
+  background: #0f172a;
+  border: 1px solid #0284c7;
+  color: #38bdf8;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.metro-select:hover, .metro-select:focus {
+  background: #1e293b;
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
 }
 
 .metro-beat-indicator {
@@ -1927,4 +1949,33 @@ body.tool-mode-mute .clip-region:hover {
 .btn-revoice-apply:hover:not(:disabled) {
   background: linear-gradient(135deg, #9333ea, #a855f7);
   box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+}
+
+/* ============================================================
+   ✂️ 切齊開頭靜音視圖元件 (Auto Trim Silence Modal Styles)
+============================================================ */
+.trim-preset-btn {
+  background: #1e293b;
+  color: #cbd5e1;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.trim-preset-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+  border-color: #475569;
+}
+
+.trim-preset-btn.active {
+  background: rgba(16, 185, 129, 0.2) !important;
+  color: #34d399 !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;
 }
