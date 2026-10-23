@@ -26,6 +26,7 @@
    │
    ├─► 3. 若新電腦有 NVIDIA RTX/GTX 顯卡：
    │      雙擊「Install_GPU_Environment.bat」 (一鍵自動裝好 CUDA PyTorch)
+   │      *注意：若需 GPU 加速，系統 Python 必須為 64 位元 (x64)；腳本已內建 32-bit 自動防呆清除。*
    │
    └─► 4. 雙擊「Start_StemForge_Studio.bat」立即開始分軌！
           (自動啟動並打開瀏覽器 http://localhost:5188)
