@@ -94,7 +94,28 @@ git clone https://github.com/allanlinallan/AI-Track-Splitter.git
 cd AI-Track-Splitter
 ```
 
-#### 2. 安裝 Python AI 環境（啟用 GPU 加速）
+#### 2.1 安裝 Python 環境
+
+1. 下載與執行安裝檔
+
+• 前往 Python 官方 Windows 下載頁面 
+https://www.python.org/downloads/windows/
+
+選擇最新的穩定版本（例如 Python 3.15 或 Python 3.14）下載 64-bit 安裝檔。
+• 執行下載好的 .exe 安裝程式。
+
+2. 關鍵設定步驟
+
+• 務必勾選「Add Python to PATH」：在安裝介面最下方，一定要勾選此選項，這能讓你在終端機或命令提示字元中直接使用 python 指令。
+• 點選 「Install Now」（或選擇 Customize installation 自訂安裝路徑與選填功能）。
+
+3. 驗證安裝是否成功
+
+• 按下鍵盤上的 Win + R 鍵，輸入 cmd 後按下 Enter 開啟命令提示字元。
+• 輸入以下指令檢查版本：bash
+python --version
+
+#### 2.2 安裝 Python AI 環境（啟用 GPU 加速）
 ```powershell
 python -m venv ai_engine/.venv
 ./ai_engine/.venv/Scripts/python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
