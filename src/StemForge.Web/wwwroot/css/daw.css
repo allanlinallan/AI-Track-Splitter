@@ -2001,3 +2001,59 @@ body.tool-mode-mute .clip-region:hover {
   background: #059669;
   color: #ffffff;
 }
+
+
+/* ==========================================
+   DAW Track 0: 原曲母帶 (Original Reference Track)
+   ========================================== */
+.track-row.reference-track {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border: 1px solid #0284c7 !important;
+  border-left: 4px solid #38bdf8 !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+  margin-bottom: 6px;
+}
+.track-row.reference-track .track-name {
+  color: #38bdf8;
+  font-weight: 600;
+}
+.ref-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #fff;
+  font-weight: bold;
+}
+
+
+/* ==========================================
+   單軌二次深度提純 (Deep Bleed Cleaner) 按鈕樣式
+   ========================================== */
+.btn-deep-clean {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: #0284c7;
+  color: #38bdf8;
+}
+
+.btn-deep-clean:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+.btn-deep-clean.active {
+  background: rgba(14, 165, 233, 0.35);
+  border-color: #38bdf8;
+  color: #7dd3fc;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
+}
+
+.btn-deep-clean.active:hover {
+  background: #0369a1;
+  color: #ffffff;
+}

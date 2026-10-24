@@ -392,6 +392,82 @@ app.MapPost("/api/jobs/{jobId}/denoise/{nodeId}", async (
     });
 });
 
+
+// 6.01. 單軌二次深度提純 (Deep Bleed Cleaner)
+app.MapPost("/api/jobs/{jobId}/deep-clean/{nodeId}", async (
+    string jobId,
+    string nodeId,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    string jobDir = Path.Combine(projectsDir, jobId);
+    string stemsDir = Path.Combine(jobDir, "stems");
+    if (!Directory.Exists(stemsDir))
+        return Results.NotFound(new { error = "找不到專案音軌目錄" });
+
+    string? stemWavPath = null;
+    var job = orchestrator.GetJobResult(jobId);
+    if (job != null)
+    {
+        var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+        if (stem != null && File.Exists(stem.FilePath))
+            stemWavPath = stem.FilePath;
+    }
+
+    if (stemWavPath == null)
+    {
+        var files = Directory.GetFiles(stemsDir, "*.wav");
+        stemWavPath = files.FirstOrDefault(f => !f.EndsWith(".orig.wav", StringComparison.OrdinalIgnoreCase) && 
+            (Path.GetFileNameWithoutExtension(f).Equals(nodeId, StringComparison.OrdinalIgnoreCase) ||
+             f.Contains(nodeId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    if (stemWavPath == null || !File.Exists(stemWavPath))
+        return Results.NotFound(new { error = $"找不到音軌檔案: {nodeId}" });
+
+    string backupPath = Path.Combine(Path.GetDirectoryName(stemWavPath)!,
+        Path.GetFileNameWithoutExtension(stemWavPath) + ".orig.wav");
+
+    // 檢查是否已提純過 (A-B Toggle: 若已有備份檔且按此鈕，還原為原始檔)
+    if (File.Exists(backupPath))
+    {
+        File.Copy(backupPath, stemWavPath, overwrite: true);
+        File.Delete(backupPath);
+        return Results.Ok(new
+        {
+            nodeId,
+            isDeepCleaned = false,
+            message = "已還原為原始音軌"
+        });
+    }
+
+    // 備份原始檔，並執行深度提純
+    File.Copy(stemWavPath, backupPath, overwrite: true);
+    var (success, reducedDb, errorMsg) = await orchestrator.CliRunner.DeepCleanWavFileAsync(
+        backupPath,
+        stemWavPath,
+        trackHint: nodeId,
+        ct: ct);
+
+    if (!success)
+    {
+        if (File.Exists(backupPath))
+        {
+            File.Copy(backupPath, stemWavPath, overwrite: true);
+            File.Delete(backupPath);
+        }
+        return Results.BadRequest(new { error = $"AI 深度提純失敗: {errorMsg}" });
+    }
+
+    return Results.Ok(new
+    {
+        nodeId,
+        isDeepCleaned = true,
+        noiseReducedDb = reducedDb,
+        message = $"完成二次深度提純：濾除動態串音與泛音滲漏 (+{reducedDb} dB 純度提升)"
+    });
+});
+
 // 6.1. 單軌神經樂器音色風格遷移 (Audio-to-Audio Timbre Transfer)
 app.MapPost("/api/jobs/{jobId}/timbre-transfer", async (
     string jobId,
@@ -516,6 +592,7 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     List<string>? selectedNodeIds = null;
     string format = "wav"; // "wav" or "mp3"
     Dictionary<string, List<(double StartSec, double EndSec)>>? mutedRangesMap = null;
+    Dictionary<string, float>? trackVolumesMap = null;
     double trimStartSec = 0;
     bool hasCountIn = false;
     double bpm = 120.0;
@@ -567,6 +644,17 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
                 {
                     format = formatEl.GetString()?.ToLowerInvariant() ?? "wav";
                 }
+                if (doc.RootElement.TryGetProperty("trackVolumes", out var volEl) && volEl.ValueKind == JsonValueKind.Object)
+                {
+                    trackVolumesMap = new(StringComparer.OrdinalIgnoreCase);
+                    foreach (var prop in volEl.EnumerateObject())
+                    {
+                        if (prop.Value.TryGetSingle(out var vVal))
+                        {
+                            trackVolumesMap[prop.Name] = vVal;
+                        }
+                    }
+                }
                 if (doc.RootElement.TryGetProperty("mutedRanges", out var mutedEl) && mutedEl.ValueKind == JsonValueKind.Object)
                 {
                     mutedRangesMap = new(StringComparer.OrdinalIgnoreCase);
@@ -594,6 +682,21 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
     var activeStems = (selectedNodeIds != null && selectedNodeIds.Count > 0)
         ? job.Stems.Where(s => selectedNodeIds.Contains(s.NodeId, StringComparer.OrdinalIgnoreCase)).ToList()
         : job.Stems.ToList();
+
+    if (selectedNodeIds != null && selectedNodeIds.Contains("TRACK_00_ORIGINAL", StringComparer.OrdinalIgnoreCase) && File.Exists(job.SourceAudioPath))
+    {
+        activeStems.Insert(0, new StemTrackResult
+        {
+            NodeId = "TRACK_00_ORIGINAL",
+            DisplayName = "原曲母帶",
+            GroupCategory = "Master",
+            FilePath = job.SourceAudioPath,
+            RelativeUrl = job.SourceAudioUrl,
+            ColorHex = "#38bdf8",
+            PeakDbFs = -0.1f,
+            RmsDbFs = -14.0f
+        });
+    }
 
     if (activeStems.Count == 0)
     {
@@ -651,6 +754,17 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
                     {
                         Array.Clear(buf.Left, startSample, endSample - startSample);
                         Array.Clear(buf.Right, startSample, endSample - startSample);
+                    }
+                }
+            }
+            if (trackVolumesMap != null && trackVolumesMap.TryGetValue(stem.NodeId, out var volFactor))
+            {
+                if (Math.Abs(volFactor - 1.0f) > 0.01f)
+                {
+                    for (int i = 0; i < buf.Length; i++)
+                    {
+                        buf.Left[i] *= volFactor;
+                        buf.Right[i] *= volFactor;
                     }
                 }
             }

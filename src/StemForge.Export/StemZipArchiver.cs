@@ -30,6 +30,11 @@ public static class StemZipArchiver
 
         var nodeSet = selectedNodeIds != null ? new HashSet<string>(selectedNodeIds, StringComparer.OrdinalIgnoreCase) : null;
 
+        if (File.Exists(jobResult.SourceAudioPath) && (nodeSet != null && nodeSet.Contains("TRACK_00_ORIGINAL")))
+        {
+            zip.CreateEntryFromFile(jobResult.SourceAudioPath, $"00_原曲母帶_{Path.GetFileName(jobResult.SourceAudioPath)}", CompressionLevel.Fastest);
+        }
+
         foreach (var stem in jobResult.Stems)
         {
             if (nodeSet != null && !nodeSet.Contains(stem.NodeId))

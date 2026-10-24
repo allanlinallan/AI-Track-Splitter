@@ -645,7 +645,7 @@ class StemForgeDawApp {
   syncLiveTrackSelection() {
     if (!this.tracks || this.tracks.length === 0) return;
     for (const t of this.tracks) {
-      const visible = this.selectedNodes.has(t.nodeId);
+      const visible = t.meta?.isOriginalReference || this.selectedNodes.has(t.nodeId);
       t.hiddenByTree = !visible;
       if (t.rowEl) {
         t.rowEl.style.display = visible ? "" : "none";
@@ -771,7 +771,16 @@ class StemForgeDawApp {
       this.audioCtx = new AudioContextClass();
       this.masterGainNode = this.audioCtx.createGain();
       this.masterGainNode.gain.value = parseFloat(this.masterVolumeSlider.value);
-      this.masterGainNode.connect(this.audioCtx.destination);
+
+      this.masterLimiter = this.audioCtx.createDynamicsCompressor();
+      this.masterLimiter.threshold.value = -0.5; // -0.5 dBFS 類比級母帶限制器防爆音天花板
+      this.masterLimiter.knee.value = 6.0; // soft knee 平滑壓縮過渡
+      this.masterLimiter.ratio.value = 20.0; // Brickwall 剛性限制
+      this.masterLimiter.attack.value = 0.002; // 2ms 極速瞬態捕捉
+      this.masterLimiter.release.value = 0.08; // 80ms 快速釋放
+
+      this.masterGainNode.connect(this.masterLimiter);
+      this.masterLimiter.connect(this.audioCtx.destination);
     }
     if (this.audioCtx.state === "suspended") {
       this.audioCtx.resume();
@@ -857,6 +866,32 @@ class StemForgeDawApp {
     this.durationSec = this.originalMixBuffer.duration;
     document.getElementById("totalTimeText").textContent = this.formatTime(this.durationSec);
 
+    // 計算原曲母帶之 Peak 與 RMS dBFS
+    let origMaxVal = 0;
+    let origSumSq = 0;
+    const ch0 = this.originalMixBuffer.getChannelData(0);
+    const chStep = Math.max(1, Math.floor(ch0.length / 50000));
+    let origCnt = 0;
+    for (let i = 0; i < ch0.length; i += chStep) {
+      const v = Math.abs(ch0[i]);
+      if (v > origMaxVal) origMaxVal = v;
+      origSumSq += v * v;
+      origCnt++;
+    }
+    const origPeakDb = origMaxVal > 0 ? (20 * Math.log10(origMaxVal)).toFixed(1) : "-0.0";
+    const origRmsDb = origCnt > 0 ? (20 * Math.log10(Math.sqrt(origSumSq / origCnt))).toFixed(1) : "-14.0";
+
+    const originalTrackStem = {
+      nodeId: "TRACK_00_ORIGINAL",
+      displayName: "🎵 原曲母帶 (Original Reference)",
+      colorHex: "#38bdf8",
+      peakDbFs: origPeakDb,
+      rmsDbFs: origRmsDb,
+      relativeUrl: jobResult.sourceAudioUrl,
+      fromCache: false,
+      isOriginalReference: true
+    };
+
     // 平行下載並解碼所有分軌
     this.tracks = [];
     const decodedStems = await Promise.all(
@@ -867,6 +902,11 @@ class StemForgeDawApp {
         return { stem, audioBuffer };
       })
     );
+
+    const allStemsToRender = [
+      { stem: originalTrackStem, audioBuffer: this.originalMixBuffer },
+      ...decodedStems
+    ];
 
     // 解析專案儲存狀態 (project_state.json)
     let projectState = null;
@@ -883,12 +923,13 @@ class StemForgeDawApp {
 
     this.mixerTracksContainer.innerHTML = "";
 
-    for (const { stem, audioBuffer } of decodedStems) {
+    for (const { stem, audioBuffer } of allStemsToRender) {
       const gainNode = this.audioCtx.createGain();
       const panNode = this.audioCtx.createStereoPanner();
       panNode.connect(gainNode);
       gainNode.connect(this.masterGainNode);
 
+      const isOriginal = !!stem.isOriginalReference;
       const isResidual = stem.nodeId.startsWith("STEM_19_RESIDUAL");
       const savedState = projectState?.trackStates?.[stem.nodeId];
 
@@ -917,7 +958,7 @@ class StemForgeDawApp {
         gainNode,
         panNode,
         solo: savedState ? !!savedState.solo : false,
-        mute: savedState ? !!savedState.mute : isResidual,
+        mute: savedState ? !!savedState.mute : (isOriginal || isResidual),
         invertPhase: savedState ? !!savedState.invertPhase : false,
         volume: savedState && typeof savedState.volume === "number" ? savedState.volume : 1.0,
         pan: savedState && typeof savedState.pan === "number" ? savedState.pan : 0.0,
@@ -963,13 +1004,13 @@ class StemForgeDawApp {
   renderTrackStrip(track) {
     const { meta } = track;
     const row = document.createElement("div");
-    row.className = "track-row";
+    row.className = "track-row" + (meta.isOriginalReference ? " reference-track" : "");
     track.rowEl = row;
 
     row.innerHTML = `
       <div class="track-info">
         <div class="track-select-box">
-          <input type="checkbox" class="track-select-chk" title="勾選以加入自訂打包下載" checked />
+          <input type="checkbox" class="track-select-chk" title="勾選以加入自訂打包下載" ${meta.isOriginalReference ? "" : "checked"} />
         </div>
         <div class="track-color-bar" style="background:${meta.colorHex}"></div>
         <div class="track-title-wrap">
@@ -978,11 +1019,11 @@ class StemForgeDawApp {
         </div>
       </div>
       <div class="track-controls">
-        <button class="m-btn solo ${track.solo ? "active" : ""}" title="Solo 獨奏此軌">S</button>
+        <button class="m-btn solo ${track.solo ? "active" : ""}" title="Solo 獨奏此軌 (對比原曲)">S</button>
         <button class="m-btn mute ${track.mute ? "active" : ""}" title="Mute 靜音此軌">M</button>
-        <button class="m-btn invert ${track.invertPhase ? "active" : ""}" title="Phase Invert 180° 反相">Ø</button>
+        <button class="m-btn invert ${track.invertPhase ? "active" : ""}" title="Phase Invert 180° 反相 (即時反相測試)">Ø</button>
         <div class="fader-wrap">
-          <input type="range" class="vol-slider" min="0" max="1.5" step="0.01" value="${track.volume ?? 1.0}" title="音量推子 (Volume)" />
+          <input type="range" class="vol-slider" min="0" max="4.0" step="0.02" value="${track.volume ?? 1.0}" title="音量推子: 0.0 dB (100%)" />
           <input type="range" class="pan-slider" min="-1" max="1" step="0.05" value="${track.pan ?? 0.0}" title="立體聲 Pan (L/R)" />
         </div>
       </div>
@@ -995,9 +1036,14 @@ class StemForgeDawApp {
         <div class="track-playhead" style="left:0%"></div>
       </div>
       <div class="track-actions">
-        <button class="act-link btn-denoise" title="一鍵 AI 頻譜自適應降噪 (消除環境雜音、電流聲與金屬毛刺)">🧼 降噪</button>
-        <a class="act-link" href="${meta.relativeUrl}" download title="下載 32-bit Float WAV">WAV</a>
-        <button class="act-link btn-midi" title="轉出此軌 MIDI 音符檔 (.mid)">🎹 MIDI</button>
+        ${meta.isOriginalReference ? 
+          `<span class="ref-badge">參照軌 REF</span>
+           <a class="act-link" href="${meta.relativeUrl}" download title="下載原曲母帶">原曲</a>` :
+          `<button class="act-link btn-denoise" title="一鍵 AI 頻譜自適應降噪 (消除環境底噪、電流聲與金屬毛刺)">🧼 降噪</button>
+           <button class="act-link btn-deep-clean" title="二次深度提純：一鍵消除動態串音、樂器滲漏與跨軌殘留 (Deep Bleed Cleaner)">✨ 提純</button>
+           <a class="act-link" href="${meta.relativeUrl}" download title="下載 32-bit Float WAV">WAV</a>
+           <button class="act-link btn-midi" title="轉出此軌 MIDI 音符檔 (.mid)">🎹 MIDI</button>`
+        }
       </div>
     `;
 
@@ -1021,8 +1067,10 @@ class StemForgeDawApp {
     track.scissorLineEl = scissorLine;
     track.scissorLabelEl = scissorLabel;
 
-    // 預設全勾選
-    this.checkedNodeIds.add(track.nodeId);
+    // 預設全勾選 (原曲參照軌除外)
+    if (!meta.isOriginalReference) {
+      this.checkedNodeIds.add(track.nodeId);
+    }
     this.updateCheckedTracksCount();
 
     chkSelect.addEventListener("change", () => {
@@ -1052,8 +1100,23 @@ class StemForgeDawApp {
       this.updateTrackGains();
     });
 
+    const updateVolTooltip = (vol) => {
+      const db = vol > 0.001 ? (20 * Math.log10(vol)).toFixed(1) : "-∞";
+      const sign = db > 0 ? "+" : "";
+      volSlider.title = `音量推子: ${sign}${db} dB (${(vol * 100).toFixed(0)}%) [雙擊還原 0 dB]`;
+    };
+    updateVolTooltip(track.volume ?? 1.0);
+
     volSlider.addEventListener("input", (e) => {
       track.volume = parseFloat(e.target.value);
+      updateVolTooltip(track.volume);
+      this.updateTrackGains();
+    });
+
+    volSlider.addEventListener("dblclick", () => {
+      track.volume = 1.0;
+      volSlider.value = 1.0;
+      updateVolTooltip(1.0);
       this.updateTrackGains();
     });
 
@@ -1104,7 +1167,8 @@ class StemForgeDawApp {
     this.renderTrackRegions(track);
 
     const btnDenoise = row.querySelector(".btn-denoise");
-    btnDenoise.addEventListener("click", async () => {
+    if (btnDenoise) {
+      btnDenoise.addEventListener("click", async () => {
       const originalText = btnDenoise.textContent;
       btnDenoise.textContent = "⏳ 降噪中...";
       btnDenoise.disabled = true;
@@ -1133,7 +1197,7 @@ class StemForgeDawApp {
         }
 
         // 重新拉取並解碼該軌音訊，更新波形與混音緩衝區
-        const curPos = this.getCurrentPlaybackTime();
+        const curPos = this.getCurrentTimeSec();
         const wasPlaying = this.isPlaying;
         const resAudio = await fetch(`${track.meta.relativeUrl}?t=${Date.now()}`);
         const buf = await resAudio.arrayBuffer();
@@ -1153,7 +1217,62 @@ class StemForgeDawApp {
         btnDenoise.disabled = false;
       }
     });
+    }
 
+    const btnDeepClean = row.querySelector(".btn-deep-clean");
+    if (btnDeepClean) {
+      btnDeepClean.addEventListener("click", async () => {
+        const originalText = btnDeepClean.textContent;
+        btnDeepClean.textContent = "⏳ 提純中...";
+        btnDeepClean.disabled = true;
+
+        try {
+          const jobId = this.currentJob ? this.currentJob.jobId : (track.meta.jobId || "");
+          if (!jobId) throw new Error("尚未載入有效專案");
+
+          const r = await fetch(`/api/jobs/${jobId}/deep-clean/${encodeURIComponent(track.nodeId)}`, {
+            method: "POST"
+          });
+          const d = await r.json();
+          if (!r.ok || d.error) {
+            throw new Error(d.error || "深度提純失敗");
+          }
+
+          track.isDeepCleaned = !!d.isDeepCleaned;
+          if (track.isDeepCleaned) {
+            btnDeepClean.classList.add("active");
+            btnDeepClean.textContent = "✨ 已提純";
+            btnDeepClean.title = `已深度提純 (純度提升 +${d.noiseReducedDb} dB)，點擊可還原為原音軌`;
+          } else {
+            btnDeepClean.classList.remove("active");
+            btnDeepClean.textContent = "✨ 提純";
+            btnDeepClean.title = "二次深度提純：一鍵消除動態串音、樂器滲漏與跨軌殘留 (Deep Bleed Cleaner)";
+          }
+
+          // 重新拉取並解碼該軌音訊，更新波形與混音緩衝區
+          const curPos = this.getCurrentTimeSec();
+          const wasPlaying = this.isPlaying;
+          const resAudio = await fetch(`${track.meta.relativeUrl}?t=${Date.now()}`);
+          const buf = await resAudio.arrayBuffer();
+          track.audioBuffer = await this.audioCtx.decodeAudioData(buf);
+          this.drawWaveform(track);
+
+          if (wasPlaying) {
+            this.pauseOffsetSec = curPos;
+            this.startPlayback();
+          }
+
+          this.showToast(`✅ [${track.meta.displayName}] ${d.message || "深度提純處理成功"}`);
+        } catch (err) {
+          alert("深度提純處理失敗: " + err.message);
+          btnDeepClean.textContent = originalText;
+        } finally {
+          btnDeepClean.disabled = false;
+        }
+      });
+    }
+
+    if (btnMidi) {
     btnMidi.addEventListener("click", async () => {
       btnMidi.textContent = "⏳...";
       btnMidi.disabled = true;
@@ -1176,6 +1295,7 @@ class StemForgeDawApp {
         btnMidi.disabled = false;
       }
     });
+    }
 
     this.mixerTracksContainer.appendChild(row);
   }
@@ -1259,11 +1379,17 @@ class StemForgeDawApp {
   clearAllSoloMute() {
     for (const t of this.tracks) {
       t.solo = false;
-      t.mute = false;
+      t.mute = t.meta?.isOriginalReference ? true : false;
       t.invertPhase = false;
-      t.rowEl.querySelector(".m-btn.solo").classList.remove("active");
-      t.rowEl.querySelector(".m-btn.mute").classList.remove("active");
-      t.rowEl.querySelector(".m-btn.invert").classList.remove("active");
+      t.rowEl?.querySelector(".m-btn.solo")?.classList.remove("active");
+      const mBtn = t.rowEl?.querySelector(".m-btn.mute");
+      if (mBtn) mBtn.classList.toggle("active", t.mute);
+      t.rowEl?.querySelector(".m-btn.invert")?.classList.remove("active");
+    }
+    this.isNullTestActive = false;
+    if (this.btnNullTest) {
+      this.btnNullTest.classList.remove("active");
+      this.btnNullTest.textContent = "Ø 反相抵消測試 (Null Test: OFF)";
     }
     this.updateTrackGains();
   }
@@ -1275,17 +1401,26 @@ class StemForgeDawApp {
       ? "Ø 反相抵消測試 (Null Test: ON — 原曲反相疊加中)"
       : "Ø 反相抵消測試 (Null Test: OFF)";
 
+    const refTrack = this.tracks.find((t) => t.meta?.isOriginalReference);
+    if (refTrack) {
+      refTrack.mute = !this.isNullTestActive;
+      refTrack.invertPhase = this.isNullTestActive;
+      if (refTrack.rowEl) {
+        const mBtn = refTrack.rowEl.querySelector(".m-btn.mute");
+        if (mBtn) mBtn.classList.toggle("active", refTrack.mute);
+        const invBtn = refTrack.rowEl.querySelector(".m-btn.invert");
+        if (invBtn) invBtn.classList.toggle("active", refTrack.invertPhase);
+      }
+    }
+
     const resTrack = this.tracks.find((t) => t.nodeId.startsWith("STEM_19_RESIDUAL"));
     if (resTrack) {
       resTrack.mute = !this.isNullTestActive;
       const mBtn = resTrack.rowEl?.querySelector(".m-btn.mute");
       if (mBtn) mBtn.classList.toggle("active", resTrack.mute);
-      this.updateTrackGains();
     }
 
-    if (this.nullTestInvertNode) {
-      this.nullTestInvertNode.gain.value = this.isNullTestActive ? -1.0 : 0.0;
-    }
+    this.updateTrackGains();
   }
 
   togglePlayPause() {
@@ -1458,17 +1593,7 @@ class StemForgeDawApp {
       this.scheduleTrackRegionGains(t, syncStartAt, effectiveAudioStart);
     }
 
-    if (this.originalMixBuffer) {
-      this.nullTestInvertNode = this.audioCtx.createGain();
-      this.nullTestInvertNode.gain.value = this.isNullTestActive ? -1.0 : 0.0;
-      this.nullTestInvertNode.connect(this.masterGainNode);
-
-      const mixSrc = this.audioCtx.createBufferSource();
-      mixSrc.buffer = this.originalMixBuffer;
-      mixSrc.connect(this.nullTestInvertNode);
-      mixSrc.start(syncStartAt, effectiveAudioStart);
-      this.activeSources.push(mixSrc);
-    }
+    // 原曲母帶已作為 Track 0 納入 WebAudio 混音軌陣列 (由上方迴圈同步播放)
 
     this.updateTrackGains();
     this.isPlaying = true;
@@ -1525,6 +1650,10 @@ class StemForgeDawApp {
       } catch {}
     }
     this.activeSources = [];
+  }
+
+  getCurrentPlaybackTime() {
+    return this.getCurrentTimeSec();
   }
 
   getCurrentTimeSec() {
@@ -1607,6 +1736,7 @@ class StemForgeDawApp {
     if (!this.tracks || this.tracks.length === 0) return;
     if (isSelected) {
       for (const t of this.tracks) {
+        if (t.meta?.isOriginalReference) continue;
         this.checkedNodeIds.add(t.nodeId);
         if (t.rowEl) {
           const chk = t.rowEl.querySelector(".track-select-chk");
@@ -1658,10 +1788,15 @@ class StemForgeDawApp {
           }
         }
       }
+      const trackVolumes = {};
+      for (const t of this.tracks) {
+        trackVolumes[t.nodeId] = t.volume ?? 1.0;
+      }
       const payload = {
         selectedNodes: Array.from(this.checkedNodeIds),
         format: format,
         mutedRanges: mutedRanges,
+        trackVolumes: trackVolumes,
         trimStartSec: this.leadTrimSec || 0,
         hasCountIn: hasCountIn,
         pickupBeats: pickupBeats,
@@ -2830,7 +2965,7 @@ class StemForgeDawApp {
       const samplesPerPixel = maxSamples / numCols;
 
       for (const t of this.tracks) {
-        if (!t.audioBuffer || t.hiddenByTree) continue;
+        if (!t.audioBuffer || t.hiddenByTree || t.meta?.isOriginalReference) continue;
         const ch0 = t.audioBuffer.getChannelData(0);
         const ch1 = t.audioBuffer.numberOfChannels > 1 ? t.audioBuffer.getChannelData(1) : ch0;
         const trackLen = Math.min(ch0.length, maxSamples);
@@ -3097,7 +3232,7 @@ class StemForgeDawApp {
 
     // Sum energies across active tracks
     for (const t of this.tracks) {
-      if (!t.audioBuffer || t.hiddenByTree) continue;
+      if (!t.audioBuffer || t.hiddenByTree || t.meta?.isOriginalReference) continue;
       const ch0 = t.audioBuffer.getChannelData(0);
       const ch1 = t.audioBuffer.numberOfChannels > 1 ? t.audioBuffer.getChannelData(1) : ch0;
       const maxLen = Math.min(ch0.length, Math.floor(scanSec * sampleRate));

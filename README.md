@@ -1,8 +1,8 @@
 # StemForge Studio 🎵
-### 19+ 軌高純度 AI 音樂分離工作站 & WebAudio 多軌混音 DAW (v2.0.1 發布版)
-**19+ Stem AI Multitrack Audio Separation Studio & WebAudio DAW (v2.0.1 Release)**
+### 19+ 軌高純度 AI 音樂分離工作站 & WebAudio 多軌混音 DAW (v2.1.0 發布版)
+**19+ Stem AI Multitrack Audio Separation Studio & WebAudio DAW (v2.1.0 Release)**
 
-[![Release](https://img.shields.io/badge/Release-v2.0.1--Portable-brightgreen.svg)](https://github.com/allanlinallan/AI-Track-Splitter/releases/tag/v2.0.1)
+[![Release](https://img.shields.io/badge/Release-v2.1.0--Portable-brightgreen.svg)](https://github.com/allanlinallan/AI-Track-Splitter/releases/tag/v2.1.0)
 [![.NET 9.0](https://img.shields.io/badge/.NET-9.0--Self--Contained-purple.svg)](https://dotnet.microsoft.com/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.7%2Bcu118-red.svg)](https://pytorch.org/)
 [![Demucs](https://img.shields.io/badge/Demucs-v4.1.0-blue.svg)](https://github.com/facebookresearch/demucs)
@@ -15,10 +15,10 @@
 
 ---
 
-### 📦 v2.0.1 獨立免安裝發布版 (Portable Win-x64)
+### 📦 v2.1.0 獨立免安裝發布版 (Portable Win-x64)
 
 ```text
-[新電腦] 下載/複製 StemForge_v2.0.1_Portable_Win64.zip
+[新電腦] 下載/複製 StemForge_v2.1.0_Portable_Win64.zip
    │
    ├─► 1. 任意目錄右鍵「解壓縮全部」
    │
@@ -46,7 +46,7 @@
 ---
 
 <a name="繁體中文"></a>
-## 🇹🇼 繁體中文全功能說明 (v2.0.1 進階大改版)
+## 🇹🇼 繁體中文全功能說明 (v2.1.0 進階大改版)
 
 **StemForge Studio 2.0** 是一個專為音樂製作人、音訊工程師與 AI 研究者打造的高純度 19+ 軌 AI 音樂分離與母帶級 WebAudio 多軌 DAW 系統。  
 結合 **C# .NET 9.0 高效能 SIMD DSP 向量運算引擎** 與 **Python NVIDIA GPU 4-Pass 深度神經網路級聯架構**，具備毫秒級多軌混音、非破壞性波形剪輯與消音、專案狀態持久化儲存、以及數學級反相抵消驗證（Null Test）。
