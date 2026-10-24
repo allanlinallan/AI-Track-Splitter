@@ -170,11 +170,12 @@ StemForge Studio v$Version - 19+ 軌 AI 音樂分離工作站（便攜免安裝�
 if ($CreateZip) {
     if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
     Write-Host "Fast compressing via Python to $ZipName ..." -ForegroundColor Cyan
+    $PrefixName = "StemForge_v$($Version)_Portable_Win64"
     python -c "
 import os, zipfile, time
 src = r'$OutDir'
 dst = r'$ZipPath'
-prefix = 'StemForge_v$Version_Portable_Win64'
+prefix = '$PrefixName'
 t0 = time.time()
 with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for root, dirs, files in os.walk(src):
