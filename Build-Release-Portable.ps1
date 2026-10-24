@@ -57,6 +57,24 @@ if ($IncludeModels) {
     Write-Host "[4/5] Skipping neural weights..." -ForegroundColor Yellow
 }
 
+# Copy documentation and model helper scripts if present
+if (Test-Path (Join-Path $RootDir "docs")) {
+    Copy-Item -Path (Join-Path $RootDir "docs") -Destination (Join-Path $OutDir "DOC") -Recurse -Force
+    Copy-Item -Path (Join-Path $RootDir "docs") -Destination (Join-Path $OutDir "docs") -Recurse -Force
+    if (Test-Path (Join-Path $RootDir "docs\USER 使用手冊.md")) {
+        Copy-Item (Join-Path $RootDir "docs\USER 使用手冊.md") -Destination $OutDir -Force
+    }
+    if (Test-Path (Join-Path $RootDir "docs\USER_GUIDE.md")) {
+        Copy-Item (Join-Path $RootDir "docs\USER_GUIDE.md") -Destination $OutDir -Force
+    }
+}
+if (Test-Path (Join-Path $RootDir "模型安裝與檢測_Setup_Models.bat")) {
+    Copy-Item (Join-Path $RootDir "模型安裝與檢測_Setup_Models.bat") -Destination $OutDir -Force
+}
+if (Test-Path (Join-Path $RootDir "模型放置說明_MODELS_SETUP.md")) {
+    Copy-Item (Join-Path $RootDir "模型放置說明_MODELS_SETUP.md") -Destination $OutDir -Force
+}
+
 Write-Host "[5/5] Generating launcher batch scripts..." -ForegroundColor Green
 
 # 1. Start_StemForge_Studio.bat
@@ -156,12 +174,18 @@ if ($CreateZip) {
 import os, zipfile, time
 src = r'$OutDir'
 dst = r'$ZipPath'
+prefix = 'StemForge_v$Version_Portable_Win64'
 t0 = time.time()
 with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for root, dirs, files in os.walk(src):
+        if 'workspace_data\\cache' in root or 'workspace_data/cache' in root:
+            continue
         for f in files:
+            if ('workspace_data\\projects' in root or 'workspace_data/projects' in root) and f != '.gitkeep':
+                continue
             fp = os.path.join(root, f)
-            z.write(fp, os.path.relpath(fp, src))
+            arcname = os.path.join(prefix, os.path.relpath(fp, src))
+            z.write(fp, arcname)
 size_mb = os.path.getsize(dst) / (1024 * 1024)
 print(f'ZIP created: {dst} ({size_mb:.2f} MB in {time.time()-t0:.1f}s)')
 "
