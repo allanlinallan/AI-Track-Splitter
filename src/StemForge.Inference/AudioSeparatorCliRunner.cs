@@ -577,4 +577,86 @@ public sealed class AudioSeparatorCliRunner
 
         return (true, finalOutputPath, instrumentName, "");
     }
+
+    /// <summary>
+    /// 調度 AI 頻譜自適應降噪 (Spectral Gating Denoise)
+    /// </summary>
+    public async Task<(bool Success, double NoiseReducedDb, string ErrorMessage)> DenoiseWavFileAsync(
+        string inputWavPath,
+        string outputWavPath,
+        double propDecrease = 0.85,
+        Func<double, string, Task>? onProgress = null,
+        CancellationToken ct = default)
+    {
+        string cliScript = Path.Combine(_aiEngineDir, "stemforge_cli.py");
+        if (!File.Exists(cliScript) || !File.Exists(inputWavPath))
+            return (false, 0.0, "找不到降噪腳本或輸入音訊檔");
+
+        string propStr = propDecrease.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        var psi = new ProcessStartInfo
+        {
+            FileName = GetPythonExecutable(),
+            Arguments = $"\"{cliScript}\" --task denoise --input \"{inputWavPath}\" --output \"{outputWavPath}\" --prop-decrease {propStr}",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+
+        double reducedDb = 0.0;
+        string? errorMsg = null;
+
+        while (!proc.StandardOutput.EndOfStream)
+        {
+            ct.ThrowIfCancellationRequested();
+            string? line = await proc.StandardOutput.ReadLineAsync(ct);
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            int braceStart = line.IndexOf('{');
+            int braceEnd = line.LastIndexOf('}');
+            if (braceStart >= 0 && braceEnd > braceStart)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(line[braceStart..(braceEnd + 1)]);
+                    var root = doc.RootElement;
+                    string type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "" : "";
+                    if (type == "progress" && onProgress != null)
+                    {
+                        double pct = root.TryGetProperty("percent", out var pProp) ? pProp.GetDouble() : 50.0;
+                        string msg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() ?? "" : "AI 頻譜降噪處理中...";
+                        await onProgress(pct, msg);
+                    }
+                    else if (type == "completed")
+                    {
+                        if (root.TryGetProperty("result", out var resObj) && resObj.TryGetProperty("noiseReducedDb", out var dbProp))
+                        {
+                            reducedDb = dbProp.GetDouble();
+                        }
+                    }
+                    else if (type == "error")
+                    {
+                        errorMsg = root.TryGetProperty("message", out var mProp) ? mProp.GetString() : "降噪處理失敗";
+                    }
+                }
+                catch { }
+            }
+        }
+
+        string errOutput = await proc.StandardError.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        if (proc.ExitCode != 0)
+        {
+            return (false, 0.0, errorMsg ?? (string.IsNullOrWhiteSpace(errOutput) ? "降噪程式異常終止" : errOutput));
+        }
+
+        return (true, reducedDb, "");
+    }
 }

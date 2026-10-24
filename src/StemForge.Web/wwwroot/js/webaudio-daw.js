@@ -995,6 +995,7 @@ class StemForgeDawApp {
         <div class="track-playhead" style="left:0%"></div>
       </div>
       <div class="track-actions">
+        <button class="act-link btn-denoise" title="一鍵 AI 頻譜自適應降噪 (消除環境雜音、電流聲與金屬毛刺)">🧼 降噪</button>
         <a class="act-link" href="${meta.relativeUrl}" download title="下載 32-bit Float WAV">WAV</a>
         <button class="act-link btn-midi" title="轉出此軌 MIDI 音符檔 (.mid)">🎹 MIDI</button>
       </div>
@@ -1101,6 +1102,57 @@ class StemForgeDawApp {
     });
 
     this.renderTrackRegions(track);
+
+    const btnDenoise = row.querySelector(".btn-denoise");
+    btnDenoise.addEventListener("click", async () => {
+      const originalText = btnDenoise.textContent;
+      btnDenoise.textContent = "⏳ 降噪中...";
+      btnDenoise.disabled = true;
+
+      try {
+        const jobId = this.currentJob ? this.currentJob.jobId : (track.meta.jobId || "");
+        if (!jobId) throw new Error("尚未載入有效專案");
+
+        const r = await fetch(`/api/jobs/${jobId}/denoise/${encodeURIComponent(track.nodeId)}`, {
+          method: "POST"
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          throw new Error(d.error || "降噪失敗");
+        }
+
+        track.isDenoised = !!d.isDenoised;
+        if (track.isDenoised) {
+          btnDenoise.classList.add("active");
+          btnDenoise.textContent = "🧼 已降噪 (還原)";
+          btnDenoise.title = "已自適應濾除底噪與雜音，點擊可還原為未降噪原音";
+        } else {
+          btnDenoise.classList.remove("active");
+          btnDenoise.textContent = "🧼 降噪";
+          btnDenoise.title = "一鍵 AI 頻譜自適應降噪 (消除環境雜音、電流聲與金屬毛刺)";
+        }
+
+        // 重新拉取並解碼該軌音訊，更新波形與混音緩衝區
+        const curPos = this.getCurrentPlaybackTime();
+        const wasPlaying = this.isPlaying;
+        const resAudio = await fetch(`${track.meta.relativeUrl}?t=${Date.now()}`);
+        const buf = await resAudio.arrayBuffer();
+        track.audioBuffer = await this.audioCtx.decodeAudioData(buf);
+        this.drawWaveform(track);
+
+        if (wasPlaying) {
+          this.pauseOffsetSec = curPos;
+          this.startPlayback();
+        }
+
+        this.showToast(`✅ [${track.meta.displayName}] ${d.message || "處理成功"}`);
+      } catch (err) {
+        alert("降噪處理失敗: " + err.message);
+        btnDenoise.textContent = originalText;
+      } finally {
+        btnDenoise.disabled = false;
+      }
+    });
 
     btnMidi.addEventListener("click", async () => {
       btnMidi.textContent = "⏳...";

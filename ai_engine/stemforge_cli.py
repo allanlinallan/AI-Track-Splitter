@@ -665,6 +665,66 @@ def time_stretch_stems(stems_dir: str, output_dir: str, tempo_ratio: float):
     return results
 
 
+
+def denoise_stem_spectral(input_path: str, output_path: str, prop_decrease: float = 0.85):
+    """
+    動態頻譜自適應降噪 (Spectral Gating Denoise):
+    濾除分軌環境底噪、麥克風電流雜音、空間雜訊及高頻金屬毛刺，輸出純淨 32-bit Float WAV。
+    """
+    try:
+        import noisereduce as nr
+    except ImportError:
+        import subprocess, sys
+        subprocess.run([sys.executable, "-m", "pip", "install", "noisereduce"], check=True)
+        import noisereduce as nr
+
+    import soundfile as sf
+    import numpy as np
+
+    data, sr = sf.read(input_path, dtype="float32", always_2d=True)
+    emit_json({
+        "type": "progress",
+        "stage": "DENOISE",
+        "percent": 25.0,
+        "message": "正在分析動態頻譜能量分佈與背景雜訊門檻 (Noise Profiling)..."
+    })
+
+    cleaned_channels = []
+    for ch in range(data.shape[1]):
+        ch_data = data[:, ch]
+        cleaned_ch = nr.reduce_noise(
+            y=ch_data,
+            sr=sr,
+            prop_decrease=prop_decrease,
+            stationary=False,
+            n_fft=2048,
+            win_length=2048,
+            hop_length=512,
+            n_jobs=2
+        )
+        cleaned_channels.append(cleaned_ch)
+
+    cleaned_data = np.column_stack(cleaned_channels)
+
+    emit_json({
+        "type": "progress",
+        "stage": "DENOISE",
+        "percent": 85.0,
+        "message": "動態頻譜門檻濾除完畢，寫入 32-bit Float WAV..."
+    })
+
+    sf.write(output_path, cleaned_data, sr, subtype="FLOAT")
+
+    orig_rms = float(np.sqrt(np.mean(data ** 2)))
+    clean_rms = float(np.sqrt(np.mean(cleaned_data ** 2)))
+    noise_reduced_db = round(float(20 * np.log10((orig_rms + 1e-9) / (clean_rms + 1e-9))), 2)
+
+    return {
+        "success": True,
+        "outputPath": output_path,
+        "noiseReducedDb": noise_reduced_db
+    }
+
 def main():
     parser = argparse.ArgumentParser(description="StemForge GPU Neural Separation CLI")
     parser.add_argument("--task", default="separate")
@@ -679,6 +739,7 @@ def main():
     parser.add_argument("--semitones", type=int, default=0)
     parser.add_argument("--tempo-ratio", type=float, default=1.0)
     parser.add_argument("--instrument", default="violin")
+    parser.add_argument("--prop-decrease", type=float, default=0.85)
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 
@@ -726,6 +787,11 @@ def main():
         elif args.task == "pitch-shift":
             results = pitch_shift_stems_gpu(args.input, args.output_dir, args.semitones)
             emit_json({"type": "completed", "task": "pitch-shift", "semitones": args.semitones, "results": results})
+            sys.exit(0)
+        elif args.task == "denoise":
+            out_file = args.output if args.output else (os.path.splitext(args.input)[0] + "_denoised.wav")
+            res = denoise_stem_spectral(args.input, out_file, prop_decrease=args.prop_decrease)
+            emit_json({"type": "completed", "task": "denoise", "result": res})
             sys.exit(0)
         elif args.task == "time-stretch":
             results = time_stretch_stems(args.input, args.output_dir, args.tempo_ratio)

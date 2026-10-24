@@ -317,6 +317,81 @@ app.MapPost("/api/jobs/{jobId}/midi/{nodeId}", async (
 });
 
 
+
+// 6.0. 單軌一鍵 AI 頻譜自適應降噪 (Spectral Gating Denoise / A-B Toggle)
+app.MapPost("/api/jobs/{jobId}/denoise/{nodeId}", async (
+    string jobId,
+    string nodeId,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    string jobDir = Path.Combine(projectsDir, jobId);
+    string stemsDir = Path.Combine(jobDir, "stems");
+    if (!Directory.Exists(stemsDir))
+        return Results.NotFound(new { error = "找不到專案音軌目錄" });
+
+    string? stemWavPath = null;
+    var job = orchestrator.GetJobResult(jobId);
+    if (job != null)
+    {
+        var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+        if (stem != null && File.Exists(stem.FilePath))
+            stemWavPath = stem.FilePath;
+    }
+
+    if (stemWavPath == null)
+    {
+        var files = Directory.GetFiles(stemsDir, "*.wav");
+        stemWavPath = files.FirstOrDefault(f => !f.EndsWith(".orig.wav", StringComparison.OrdinalIgnoreCase) && 
+            (Path.GetFileNameWithoutExtension(f).Equals(nodeId, StringComparison.OrdinalIgnoreCase) ||
+             f.Contains(nodeId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    if (stemWavPath == null || !File.Exists(stemWavPath))
+        return Results.NotFound(new { error = "找不到該音軌 WAV 檔" });
+
+    string backupPath = Path.Combine(Path.GetDirectoryName(stemWavPath)!, $"{Path.GetFileNameWithoutExtension(stemWavPath)}.orig.wav");
+
+    // 若備份檔已存在 -> 代表目前已是降噪狀態，使用者再次點擊表示要【還原原音】
+    if (File.Exists(backupPath))
+    {
+        File.Copy(backupPath, stemWavPath, overwrite: true);
+        File.Delete(backupPath);
+        return Results.Ok(new
+        {
+            nodeId,
+            isDenoised = false,
+            message = "已還原為原始未降噪音軌"
+        });
+    }
+
+    // 備份原始音訊，執行自適應頻譜降噪
+    File.Copy(stemWavPath, backupPath, overwrite: true);
+    var (success, reducedDb, errorMsg) = await orchestrator.CliRunner.DenoiseWavFileAsync(
+        backupPath,
+        stemWavPath,
+        propDecrease: 0.85,
+        ct: ct);
+
+    if (!success)
+    {
+        if (File.Exists(backupPath))
+        {
+            File.Copy(backupPath, stemWavPath, overwrite: true);
+            File.Delete(backupPath);
+        }
+        return Results.BadRequest(new { error = $"AI 降噪處理失敗: {errorMsg}" });
+    }
+
+    return Results.Ok(new
+    {
+        nodeId,
+        isDenoised = true,
+        noiseReducedDb = reducedDb,
+        message = $"AI 降噪完成！已自適應濾除 {reducedDb} dB 雜訊"
+    });
+});
+
 // 6.1. 單軌神經樂器音色風格遷移 (Audio-to-Audio Timbre Transfer)
 app.MapPost("/api/jobs/{jobId}/timbre-transfer", async (
     string jobId,

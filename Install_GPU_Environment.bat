@@ -128,7 +128,7 @@ if errorlevel 1 goto torch_fail
 
 echo.
 echo [3/3] 正在安裝 Demucs 與 UVR 分軌模組 (audio-separator GPU)...
-"%~dp0ai_engine\.venv\Scripts\python.exe" -m pip install "audio-separator[gpu]>=0.47.0" "demucs>=4.0.0" "onnxruntime-gpu>=1.19.0" soundfile numpy scipy
+"%~dp0ai_engine\.venv\Scripts\python.exe" -m pip install "audio-separator[gpu]>=0.47.0" "demucs>=4.0.0" "onnxruntime-gpu>=1.19.0" soundfile numpy scipy noisereduce
 if errorlevel 1 goto ai_fail
 
 echo.

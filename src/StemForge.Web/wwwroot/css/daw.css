@@ -1979,3 +1979,25 @@ body.tool-mode-mute .clip-region:hover {
   border-color: #10b981 !important;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;
 }
+
+.btn-denoise {
+  border-color: #06b6d4;
+  color: #a5f3fc;
+}
+
+.btn-denoise:hover {
+  background: #0891b2;
+  color: #ffffff;
+}
+
+.btn-denoise.active {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #10b981;
+  color: #34d399;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.btn-denoise.active:hover {
+  background: #059669;
+  color: #ffffff;
+}
