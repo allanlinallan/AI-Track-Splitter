@@ -1034,6 +1034,7 @@ class StemForgeDawApp {
           <div class="track-name" title="${meta.displayName}">${meta.displayName}</div>
           <div class="track-meta">Peak: ${meta.peakDbFs} dB | RMS: ${meta.rmsDbFs} dB ${meta.fromCache ? "⚡Cache" : ""}</div>
         </div>
+        ${meta.isOriginalReference ? "" : `<button class="btn-track-remove" title="刪除此音軌 (從工程與混音器中移除)">✕</button>`}
       </div>
       <div class="track-controls">
         <button class="m-btn solo ${track.solo ? "active" : ""}" title="Solo 獨奏此軌 (對比原曲)">S</button>
@@ -1059,7 +1060,8 @@ class StemForgeDawApp {
           `<button class="act-link btn-denoise" title="一鍵 AI 頻譜自適應降噪 (消除環境底噪、電流聲與金屬毛刺)">🧼 降噪</button>
            <button class="act-link btn-deep-clean" title="二次深度提純：一鍵消除動態串音、樂器滲漏與跨軌殘留 (Deep Bleed Cleaner)">✨ 提純</button>
            <a class="act-link" href="${meta.relativeUrl}" download title="下載 32-bit Float WAV">WAV</a>
-           <button class="act-link btn-midi" title="轉出此軌 MIDI 音符檔 (.mid)">🎹 MIDI</button>`
+           <button class="act-link btn-midi" title="轉出此軌 MIDI 音符檔 (.mid)">🎹 MIDI</button>
+           <button class="act-link btn-delete-track" title="刪除此音軌 (從工程與混音器中移除)">🗑️ 刪除</button>`
         }
       </div>
     `;
@@ -1314,7 +1316,72 @@ class StemForgeDawApp {
     });
     }
 
+    const btnTrackRemove = row.querySelector(".btn-track-remove");
+    const btnDeleteTrack = row.querySelector(".btn-delete-track");
+    const handleTrackDelete = async () => {
+      const confirmed = confirm(`確定要刪除音軌「${meta.displayName}」嗎？\n此操作將從混音器與工程中永久移除此音軌。`);
+      if (!confirmed) return;
+      await this.deleteTrack(track);
+    };
+    if (btnTrackRemove) btnTrackRemove.addEventListener("click", handleTrackDelete);
+    if (btnDeleteTrack) btnDeleteTrack.addEventListener("click", handleTrackDelete);
+
     this.mixerTracksContainer.appendChild(row);
+  }
+
+  async deleteTrack(track) {
+    const jobId = this.currentJob ? this.currentJob.jobId : (track.meta.jobId || "");
+    if (!jobId) {
+      this.showToast("⚠️ 找不到當前專案 ID");
+      return;
+    }
+
+    try {
+      this.showBusyOverlay(`正在刪除音軌 [${track.meta.displayName}]...`);
+      const resp = await fetch(`/api/jobs/${jobId}/tracks/${encodeURIComponent(track.nodeId)}`, {
+        method: "DELETE"
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || "刪除音軌失敗");
+      }
+
+      // 1. 若該軌正在發聲，斷開 WebAudio 連接
+      if (track.gainNode) {
+        try { track.gainNode.disconnect(); } catch (e) {}
+      }
+      if (track.panNode) {
+        try { track.panNode.disconnect(); } catch (e) {}
+      }
+
+      // 2. 從 this.tracks 中移除
+      const idx = this.tracks.findIndex((t) => t.nodeId === track.nodeId);
+      if (idx >= 0) {
+        this.tracks.splice(idx, 1);
+      }
+
+      // 3. 從 checkedNodeIds 移除
+      this.checkedNodeIds.delete(track.nodeId);
+      this.updateCheckedTracksCount();
+
+      // 4. 從 DOM 移除
+      if (track.rowEl) {
+        track.rowEl.style.transition = "all 0.25s ease";
+        track.rowEl.style.opacity = "0";
+        track.rowEl.style.transform = "translateX(-20px)";
+        setTimeout(() => {
+          track.rowEl.remove();
+        }, 250);
+      }
+
+      // 5. 更新混音音量
+      this.updateTrackGains();
+      this.showToast(`🗑️ 已成功刪除音軌：${track.meta.displayName}`);
+    } catch (err) {
+      alert("刪除音軌失敗: " + err.message);
+    } finally {
+      this.hideBusyOverlay();
+    }
   }
 
   drawWaveform(track) {
@@ -1343,9 +1410,13 @@ class StemForgeDawApp {
     const buf = track.audioBuffer;
     if (!buf || buf.length === 0) return;
 
+    const totalDur = this.durationSec > 0 ? this.durationSec : buf.duration;
+    const trackWidthRatio = Math.min(1.0, buf.duration / totalDur);
+    const activeW = Math.max(10, Math.floor(w * trackWidthRatio));
+
     const ch0 = buf.getChannelData(0);
     const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : ch0;
-    const numBuckets = Math.min(w, 450);
+    const numBuckets = Math.min(activeW, 450);
     const step = Math.max(1, Math.floor(ch0.length / numBuckets));
 
     const bucketPeaks = new Float32Array(numBuckets);
@@ -1366,7 +1437,7 @@ class StemForgeDawApp {
     }
 
     ctx.fillStyle = track.meta.colorHex;
-    const barWidth = w / numBuckets;
+    const barWidth = activeW / numBuckets;
 
     for (let b = 0; b < numBuckets; b++) {
       const normAmp = Math.min(1.0, bucketPeaks[b] / globalMax);
@@ -2307,12 +2378,15 @@ class StemForgeDawApp {
   }
 
   splitTrackRegion(track, splitSec) {
-    if (!track.regions || splitSec <= 0.1 || splitSec >= this.durationSec - 0.1) return;
+    if (!track.regions) return;
+    const maxDur = (track.audioBuffer ? track.audioBuffer.duration : this.durationSec) || this.durationSec;
+    if (splitSec <= 0.02 || splitSec >= maxDur - 0.02) return;
+
     const targetIdx = track.regions.findIndex((r) => r.startSec < splitSec && splitSec < r.endSec);
     if (targetIdx < 0) return;
 
     const r = track.regions[targetIdx];
-    if (splitSec - r.startSec < 0.08 || r.endSec - splitSec < 0.08) return;
+    if (splitSec - r.startSec < 0.02 || r.endSec - splitSec < 0.02) return;
 
     const r1 = {
       id: track.nextRegionId++,
@@ -2347,20 +2421,119 @@ class StemForgeDawApp {
   }
 
   deleteTrackRegion(track, regionId) {
-    const reg = track.regions ? track.regions.find((r) => r.id === regionId) : null;
-    if (!reg) return;
-    reg.muted = true;
+    // 預設剪除片段時進行漣漪貼齊 (Ripple Cut)
+    this.rippleDeleteTrackRegion(track, regionId);
+  }
+
+  rippleCutTrackBuffer(track, startSec, endSec) {
+    const oldBuf = track.audioBuffer;
+    if (!oldBuf) return 0;
+
+    const sr = oldBuf.sampleRate;
+    const startSample = Math.max(0, Math.floor(startSec * sr));
+    const endSample = Math.min(oldBuf.length, Math.floor(endSec * sr));
+    if (endSample <= startSample) return 0;
+
+    const cutSamples = endSample - startSample;
+    const cutDuration = cutSamples / sr;
+    const newLen = Math.max(0, oldBuf.length - cutSamples);
+
+    const newBuf = this.audioCtx.createBuffer(oldBuf.numberOfChannels, newLen, sr);
+    for (let ch = 0; ch < oldBuf.numberOfChannels; ch++) {
+      const oldData = oldBuf.getChannelData(ch);
+      const newData = newBuf.getChannelData(ch);
+      if (startSample > 0) {
+        newData.set(oldData.subarray(0, startSample), 0);
+      }
+      if (endSample < oldBuf.length) {
+        newData.set(oldData.subarray(endSample), startSample);
+      }
+    }
+
+    track.audioBuffer = newBuf;
+    return cutDuration;
+  }
+
+  async rippleDeleteTrackRegion(track, regionId) {
+    if (!track.regions || track.regions.length === 0) return;
+    const regIdx = track.regions.findIndex((r) => r.id === regionId);
+    if (regIdx < 0) return;
+
+    const targetReg = track.regions[regIdx];
+    const cutStartSec = targetReg.startSec;
+    const cutEndSec = targetReg.endSec;
+    const cutDuration = cutEndSec - cutStartSec;
+    if (cutDuration <= 0.001) return;
+
+    const wasPlaying = this.isPlaying;
+    const curPlayPos = this.getCurrentTimeSec();
+
+    // 1. 在 WebAudio AudioBuffer 進行漣漪剪除並緊縮資料
+    const actualCutDuration = this.rippleCutTrackBuffer(track, cutStartSec, cutEndSec);
+
+    // 2. 更新 track.regions：移除被切除的 region，並將其後面的所有 region 往前平移 actualCutDuration
+    track.regions.splice(regIdx, 1);
+    for (let i = regIdx; i < track.regions.length; i++) {
+      const reg = track.regions[i];
+      reg.startSec = Math.max(0, reg.startSec - actualCutDuration);
+      reg.endSec = Math.max(reg.startSec, reg.endSec - actualCutDuration);
+    }
+
+    // 若沒有任何 region 了，補一個預設涵蓋新音訊長度的 region
+    if (track.regions.length === 0 && track.audioBuffer) {
+      track.regions.push({
+        id: track.nextRegionId++,
+        startSec: 0,
+        endSec: track.audioBuffer.duration,
+        muted: false
+      });
+    }
+
+    // 3. 立即重繪該軌波形與 Region 覆蓋層
+    this.drawWaveform(track);
     this.renderTrackRegions(track);
 
-    if (this.isPlaying) {
-      this.scheduleTrackRegionGains(track, this.audioCtx.currentTime, this.getCurrentTimeSec());
+    // 4. 若當前正在播放，更新播放源位置
+    if (wasPlaying) {
+      this.stopPlayback();
+      const newPos = curPlayPos > cutEndSec
+        ? curPlayPos - actualCutDuration
+        : (curPlayPos >= cutStartSec ? cutStartSec : curPlayPos);
+      this.seekTo(Math.max(0, newPos));
+      this.startPlayback();
+    }
+
+    this.showToast(`✂️⏩ 已剪除片段 [${this.formatTime(cutStartSec)} ~ ${this.formatTime(cutEndSec)}]，後方音訊已自動往前貼齊！`);
+
+    // 5. 非同步通知後端持久化寫入磁碟 WAV、更新 metrics 與 Reaper 工程
+    const jobId = this.currentJob ? this.currentJob.jobId : (track.meta.jobId || "");
+    if (jobId) {
+      try {
+        const resp = await fetch(`/api/jobs/${jobId}/tracks/${encodeURIComponent(track.nodeId)}/ripple-cut`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startSec: cutStartSec, endSec: cutEndSec })
+        });
+        const resData = await resp.json();
+        if (resp.ok && resData.newDurationSeconds) {
+          track.meta.durationSeconds = resData.newDurationSeconds;
+          if (resData.peakDbFs !== undefined) track.meta.peakDbFs = resData.peakDbFs;
+          if (resData.rmsDbFs !== undefined) track.meta.rmsDbFs = resData.rmsDbFs;
+          const metaEl = track.rowEl ? track.rowEl.querySelector(".track-meta") : null;
+          if (metaEl) {
+            metaEl.textContent = `Peak: ${track.meta.peakDbFs} dB | RMS: ${track.meta.rmsDbFs} dB ${track.meta.fromCache ? "⚡Cache" : ""}`;
+          }
+        }
+      } catch (err) {
+        console.warn("Ripple cut backend sync error:", err);
+      }
     }
   }
 
   renderTrackRegions(track) {
     if (!track.regionsOverlayEl) return;
     track.regionsOverlayEl.innerHTML = "";
-    const totalDur = this.durationSec > 0 ? this.durationSec : 1.0;
+    const totalDur = this.durationSec > 0 ? this.durationSec : (track.audioBuffer ? track.audioBuffer.duration : 1.0);
 
     for (const r of track.regions) {
       const leftPct = (r.startSec / totalDur) * 100;
@@ -2378,16 +2551,24 @@ class StemForgeDawApp {
 
       inner += `
         <div class="clip-action-pill">
+          <button class="clip-pill-btn btn-clip-ripple" title="剪除此片段並將後面音訊自動往前平移貼齊 (Ripple Cut / 漣漪貼齊)">⏩ 剪除貼齊</button>
           <button class="clip-pill-btn btn-clip-toggle-mute" title="${r.muted ? "取消消音" : "消音此段"}">${r.muted ? "🔊" : "🔇"}</button>
-          <button class="clip-pill-btn btn-clip-del" title="刪除此段">🗑️</button>
+          <button class="clip-pill-btn btn-clip-del" title="剪除此段並往前貼齊 (Ripple Cut)">🗑️</button>
         </div>
       `;
 
       el.innerHTML = inner;
 
+      const btnRipple = el.querySelector(".btn-clip-ripple");
       const btnToggleMute = el.querySelector(".btn-clip-toggle-mute");
       const btnDel = el.querySelector(".btn-clip-del");
 
+      if (btnRipple) {
+        btnRipple.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.rippleDeleteTrackRegion(track, r.id);
+        });
+      }
       if (btnToggleMute) {
         btnToggleMute.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -2397,7 +2578,7 @@ class StemForgeDawApp {
       if (btnDel) {
         btnDel.addEventListener("click", (e) => {
           e.stopPropagation();
-          this.deleteTrackRegion(track, r.id);
+          this.rippleDeleteTrackRegion(track, r.id);
         });
       }
 
@@ -3597,7 +3778,7 @@ class StemForgeDawApp {
         regions: [{
           id: 1,
           startSec: 0,
-          endSec: Math.min(this.durationSec, audioBuffer.duration),
+          endSec: audioBuffer.duration,
           muted: false
         }],
         nextRegionId: 2,

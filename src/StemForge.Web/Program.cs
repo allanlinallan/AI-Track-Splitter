@@ -1291,7 +1291,7 @@ app.MapPost("/api/jobs/{jobId}/tracks/custom", async (
     }
 });
 
-// 12. 刪除自訂音軌
+// 12. 刪除音軌 (支援自訂音軌與任何分離音軌，原曲參照軌除外)
 app.MapDelete("/api/jobs/{jobId}/tracks/{nodeId}", async (
     string jobId,
     string nodeId,
@@ -1301,8 +1301,8 @@ app.MapDelete("/api/jobs/{jobId}/tracks/{nodeId}", async (
     var job = orchestrator.GetJobResult(jobId);
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
-    bool ok = await orchestrator.DeleteCustomTrackAsync(jobId, nodeId, ct);
-    if (!ok) return Results.NotFound(new { error = "找不到該音軌或無法刪除" });
+    bool ok = await orchestrator.DeleteTrackAsync(jobId, nodeId, ct);
+    if (!ok) return Results.NotFound(new { error = "找不到該音軌或原曲參照軌不可刪除" });
 
     try
     {
@@ -1313,6 +1313,39 @@ app.MapDelete("/api/jobs/{jobId}/tracks/{nodeId}", async (
     catch { }
 
     return Results.Ok(new { success = true, nodeId });
+});
+
+// 13. 音軌片段漣漪剪除並自動往前貼齊 (Ripple Cut)
+app.MapPost("/api/jobs/{jobId}/tracks/{nodeId}/ripple-cut", async (
+    string jobId,
+    string nodeId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    using var doc = await JsonDocument.ParseAsync(httpReq.Body, cancellationToken: ct);
+    double startSec = 0;
+    double endSec = 0;
+    if (doc.RootElement.TryGetProperty("startSec", out var sProp)) startSec = sProp.GetDouble();
+    if (doc.RootElement.TryGetProperty("endSec", out var eProp)) endSec = eProp.GetDouble();
+
+    if (endSec <= startSec) return Results.BadRequest(new { error = "結束時間必須大於起始時間" });
+
+    var updatedStem = await orchestrator.RippleCutTrackAsync(jobId, nodeId, startSec, endSec, ct);
+    if (updatedStem == null) return Results.NotFound(new { error = "找不到該音軌或處理失敗" });
+
+    return Results.Ok(new
+    {
+        success = true,
+        nodeId = updatedStem.NodeId,
+        newDurationSeconds = updatedStem.DurationSeconds,
+        peakDbFs = updatedStem.PeakDbFs,
+        rmsDbFs = updatedStem.RmsDbFs,
+        message = $"已成功剪除 {startSec:F2}s ~ {endSec:F2}s 片段並將後方音訊往前平移貼齊！"
+    });
 });
 
 static string CalculateTransposedKey(string origKey, int semitones)

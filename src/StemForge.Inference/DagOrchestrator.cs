@@ -1387,15 +1387,17 @@ public sealed class DagOrchestrator
     }
 
     /// <summary>
-    /// 刪除專案中的自訂音軌
+    /// 刪除專案中的音軌 (可刪除自訂軌或分離軌，原曲參照軌保護不可刪除)
     /// </summary>
-    public async Task<bool> DeleteCustomTrackAsync(string jobId, string nodeId, CancellationToken ct = default)
+    public async Task<bool> DeleteTrackAsync(string jobId, string nodeId, CancellationToken ct = default)
     {
         var job = GetJobResult(jobId);
         if (job == null) return false;
 
         var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
         if (stem == null) return false;
+
+        if (stem.IsOriginalReference) return false; // 保護原曲參照軌
 
         job.Stems.Remove(stem);
 
@@ -1440,6 +1442,107 @@ public sealed class DagOrchestrator
         catch { }
 
         return true;
+    }
+
+    public Task<bool> DeleteCustomTrackAsync(string jobId, string nodeId, CancellationToken ct = default)
+        => DeleteTrackAsync(jobId, nodeId, ct);
+
+    /// <summary>
+    /// 漣漪剪除音軌片段 (Ripple Cut)：切除 [startSec, endSec] 區間之音訊，並將後面所有音訊自動往前平移貼齊
+    /// </summary>
+    public async Task<StemTrackResult?> RippleCutTrackAsync(string jobId, string nodeId, double startSec, double endSec, CancellationToken ct = default)
+    {
+        var job = GetJobResult(jobId);
+        if (job == null) return null;
+
+        var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+        if (stem == null || !File.Exists(stem.FilePath)) return null;
+
+        if (endSec <= startSec) return stem;
+
+        // 建立原始備份 (若尚未存在)
+        string origBackup = Path.Combine(Path.GetDirectoryName(stem.FilePath)!, $"{Path.GetFileNameWithoutExtension(stem.FilePath)}.orig.wav");
+        if (!File.Exists(origBackup))
+        {
+            try { File.Copy(stem.FilePath, origBackup, true); } catch { }
+        }
+
+        // 讀取立體聲音訊
+        var audio = await Task.Run(() => WavFileIo.ReadStereoAudio(stem.FilePath), ct);
+        int sampleRate = audio.SampleRate > 0 ? audio.SampleRate : 48000;
+        int startSample = Math.Max(0, (int)Math.Round(startSec * sampleRate));
+        int endSample = Math.Min(audio.Length, (int)Math.Round(endSec * sampleRate));
+
+        if (startSample >= endSample || startSample >= audio.Length)
+        {
+            return stem;
+        }
+
+        int cutSamples = endSample - startSample;
+        int newLen = Math.Max(0, audio.Length - cutSamples);
+        var newAudio = new StereoAudioBuffer(sampleRate, newLen);
+
+        if (startSample > 0)
+        {
+            Array.Copy(audio.Left, 0, newAudio.Left, 0, startSample);
+            Array.Copy(audio.Right, 0, newAudio.Right, 0, startSample);
+        }
+
+        int remainingSamples = audio.Length - endSample;
+        if (remainingSamples > 0)
+        {
+            Array.Copy(audio.Left, endSample, newAudio.Left, startSample, remainingSamples);
+            Array.Copy(audio.Right, endSample, newAudio.Right, startSample, remainingSamples);
+        }
+
+        // 寫入更新後的 WAV
+        await Task.Run(() => WavFileIo.WriteFloat32Wav(stem.FilePath, newAudio), ct);
+
+        // 同步更新 raw_stems 目錄（若存在）
+        string rawPath = Path.Combine(_workspaceDataDir, "projects", jobId, "raw_stems", $"{nodeId}.wav");
+        if (File.Exists(rawPath))
+        {
+            try { await Task.Run(() => WavFileIo.WriteFloat32Wav(rawPath, newAudio), ct); } catch { }
+        }
+
+        // 更新分析指標與時長
+        var metrics = await Task.Run(() => WavFileIo.AnalyzeAudioMetrics(newAudio), ct);
+        stem.DurationSeconds = newAudio.DurationSeconds;
+        stem.PeakDbFs = metrics.PeakDbFs;
+        stem.RmsDbFs = metrics.RmsDbFs;
+
+        // 若為自訂音軌，更新 custom_tracks.json
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        string customMetaPath = Path.Combine(jobDir, "custom_tracks.json");
+        if (File.Exists(customMetaPath))
+        {
+            try
+            {
+                var metaList = JsonSerializer.Deserialize<List<CustomTrackMeta>>(await File.ReadAllTextAsync(customMetaPath, ct)) ?? [];
+                int idx = metaList.FindIndex(x => string.Equals(x.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0)
+                {
+                    metaList[idx] = metaList[idx] with { DurationSeconds = newAudio.DurationSeconds };
+                    await File.WriteAllTextAsync(customMetaPath, JsonSerializer.Serialize(metaList, new JsonSerializerOptions { WriteIndented = true }), ct);
+                }
+            }
+            catch { }
+        }
+
+        // 重新產生 Reaper 工程檔
+        try
+        {
+            string rppPath = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp");
+            ReaperRppGenerator.GenerateReaperProjectFile(
+                rppPath,
+                job.OriginalFileName,
+                job.SampleRate > 0 ? job.SampleRate : 48000,
+                job.DurationSeconds,
+                job.Stems);
+        }
+        catch { }
+
+        return stem;
     }
 
     private static string PickNextColor(int count)

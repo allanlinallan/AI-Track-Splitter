@@ -72,13 +72,14 @@ public sealed record StemTrackResult
     public required string RelativeUrl { get; set; }
     public string? MidiRelativeUrl { get; set; }
     public string? MidiFilePath { get; set; }
-    public double DurationSeconds { get; init; }
-    public int SampleRate { get; init; }
-    public float PeakDbFs { get; init; }
-    public float RmsDbFs { get; init; }
-    public float[] WaveformPeaks { get; init; } = [];
-    public bool FromCache { get; init; }
-    public bool IsCustomTrack { get; init; } = false;
+    public double DurationSeconds { get; set; }
+    public int SampleRate { get; set; }
+    public float PeakDbFs { get; set; }
+    public float RmsDbFs { get; set; }
+    public float[] WaveformPeaks { get; set; } = [];
+    public bool FromCache { get; set; }
+    public bool IsCustomTrack { get; set; } = false;
+    public bool IsOriginalReference { get; set; } = false;
 }
 
 public sealed record CustomTrackMeta(
@@ -86,7 +87,8 @@ public sealed record CustomTrackMeta(
     string DisplayName,
     string GroupCategory,
     string ColorHex,
-    string FileName
+    string FileName,
+    double DurationSeconds = 0.0
 );
 
 public sealed record SeparationJobResult
