@@ -91,6 +91,21 @@ class StemForgeDawApp {
     this.historyListContainer = document.getElementById("historyListContainer");
     this.checkedNodeIds = new Set();
 
+    // 自訂新增音軌相關 DOM 元件
+    this.btnAddCustomTrack = document.getElementById("btnAddCustomTrack");
+    this.customTrackModal = document.getElementById("customTrackModal");
+    this.btnCloseCustomTrack = document.getElementById("btnCloseCustomTrack");
+    this.btnCancelCustomTrack = document.getElementById("btnCancelCustomTrack");
+    this.btnConfirmCustomTrack = document.getElementById("btnConfirmCustomTrack");
+    this.customTrackDropzone = document.getElementById("customTrackDropzone");
+    this.customTrackFileInput = document.getElementById("customTrackFileInput");
+    this.customTrackFileLabel = document.getElementById("customTrackFileLabel");
+    this.customTrackLocalPathInput = document.getElementById("customTrackLocalPathInput");
+    this.customTrackNameInput = document.getElementById("customTrackNameInput");
+    this.customTrackCategorySelect = document.getElementById("customTrackCategorySelect");
+    this.customTrackColorInput = document.getElementById("customTrackColorInput");
+    this.selectedCustomFile = null;
+
     // AI 神經變調控制元件 (原調偵測 + ±6半音升降桿 + 點擊開始做 + 一鍵恢復)
     this.detectedKeyBadge = document.getElementById("detectedKeyBadge");
     this.keyOverrideSelect = document.getElementById("keyOverrideSelect");
@@ -366,6 +381,8 @@ class StemForgeDawApp {
     if (this.btnClearAllTracks) {
       this.btnClearAllTracks.addEventListener("click", () => this.selectAllTracks(false));
     }
+
+    this.initCustomTrackEvents();
 
     if (this.btnOpenHistory) {
       this.btnOpenHistory.addEventListener("click", () => this.openHistoryModal());
@@ -3352,41 +3369,59 @@ class StemForgeDawApp {
   // 自訂新增音軌 (Add Custom Track) 模組邏輯
   // ==========================================
   initCustomTrackEvents() {
-    if (this.btnAddCustomTrack) {
-      this.btnAddCustomTrack.addEventListener("click", () => this.openCustomTrackModal());
-    }
-    if (this.btnCloseCustomTrack) {
-      this.btnCloseCustomTrack.addEventListener("click", () => this.closeCustomTrackModal());
-    }
-    if (this.btnCancelCustomTrack) {
-      this.btnCancelCustomTrack.addEventListener("click", () => this.closeCustomTrackModal());
-    }
-    if (this.customTrackModal) {
-      this.customTrackModal.addEventListener("click", (e) => {
-        if (e.target === this.customTrackModal) this.closeCustomTrackModal();
+    const addBtn = this.btnAddCustomTrack || document.getElementById("btnAddCustomTrack");
+    if (addBtn) {
+      addBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.openCustomTrackModal();
       });
     }
 
-    if (this.customTrackDropzone && this.customTrackFileInput) {
-      this.customTrackDropzone.addEventListener("click", () => this.customTrackFileInput.click());
-      this.customTrackFileInput.addEventListener("change", (e) => {
+    const closeBtn = this.btnCloseCustomTrack || document.getElementById("btnCloseCustomTrack");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.closeCustomTrackModal();
+      });
+    }
+
+    const cancelBtn = this.btnCancelCustomTrack || document.getElementById("btnCancelCustomTrack");
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.closeCustomTrackModal();
+      });
+    }
+
+    const modal = this.customTrackModal || document.getElementById("customTrackModal");
+    if (modal) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) this.closeCustomTrackModal();
+      });
+    }
+
+    const dropzone = this.customTrackDropzone || document.getElementById("customTrackDropzone");
+    const fileInp = this.customTrackFileInput || document.getElementById("customTrackFileInput");
+    if (dropzone && fileInp) {
+      dropzone.addEventListener("click", () => fileInp.click());
+      fileInp.addEventListener("change", (e) => {
         if (e.target.files.length > 0) {
           this.setCustomTrackSelectedFile(e.target.files[0]);
         }
       });
-      this.customTrackDropzone.addEventListener("dragover", (e) => {
+      dropzone.addEventListener("dragover", (e) => {
         e.preventDefault();
-        this.customTrackDropzone.style.borderColor = "#c084fc";
-        this.customTrackDropzone.style.background = "rgba(168, 85, 247, 0.15)";
+        dropzone.style.borderColor = "#c084fc";
+        dropzone.style.background = "rgba(168, 85, 247, 0.15)";
       });
-      this.customTrackDropzone.addEventListener("dragleave", () => {
-        this.customTrackDropzone.style.borderColor = "#a855f7";
-        this.customTrackDropzone.style.background = "rgba(168, 85, 247, 0.06)";
+      dropzone.addEventListener("dragleave", () => {
+        dropzone.style.borderColor = "#a855f7";
+        dropzone.style.background = "rgba(168, 85, 247, 0.06)";
       });
-      this.customTrackDropzone.addEventListener("drop", (e) => {
+      dropzone.addEventListener("drop", (e) => {
         e.preventDefault();
-        this.customTrackDropzone.style.borderColor = "#a855f7";
-        this.customTrackDropzone.style.background = "rgba(168, 85, 247, 0.06)";
+        dropzone.style.borderColor = "#a855f7";
+        dropzone.style.background = "rgba(168, 85, 247, 0.06)";
         if (e.dataTransfer && e.dataTransfer.files.length > 0) {
           this.setCustomTrackSelectedFile(e.dataTransfer.files[0]);
         }
@@ -3394,19 +3429,17 @@ class StemForgeDawApp {
     }
 
     // 拖曳音訊直接放進 DAW mixer container 即刻開啟新增彈窗
-    if (this.mixerTracksContainer) {
-      this.mixerTracksContainer.addEventListener("dragover", (e) => {
-        if (this.currentJob) {
-          e.preventDefault();
-          this.mixerTracksContainer.classList.add("drag-over-active");
-        }
+    const mixerContainer = this.mixerTracksContainer || document.getElementById("mixerTracksContainer");
+    if (mixerContainer) {
+      mixerContainer.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        mixerContainer.classList.add("drag-over-active");
       });
-      this.mixerTracksContainer.addEventListener("dragleave", () => {
-        this.mixerTracksContainer.classList.remove("drag-over-active");
+      mixerContainer.addEventListener("dragleave", () => {
+        mixerContainer.classList.remove("drag-over-active");
       });
-      this.mixerTracksContainer.addEventListener("drop", (e) => {
-        this.mixerTracksContainer.classList.remove("drag-over-active");
-        if (!this.currentJob) return;
+      mixerContainer.addEventListener("drop", (e) => {
+        mixerContainer.classList.remove("drag-over-active");
         if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
           e.preventDefault();
           this.openCustomTrackModal(e.dataTransfer.files[0]);
@@ -3418,36 +3451,51 @@ class StemForgeDawApp {
     document.querySelectorAll(".custom-color-presets .color-dot").forEach((dot) => {
       dot.addEventListener("click", () => {
         const c = dot.dataset.color;
-        if (c && this.customTrackColorInput) {
-          this.customTrackColorInput.value = c;
+        const colorInp = this.customTrackColorInput || document.getElementById("customTrackColorInput");
+        if (c && colorInp) {
+          colorInp.value = c;
         }
       });
     });
 
-    if (this.btnConfirmCustomTrack) {
-      this.btnConfirmCustomTrack.addEventListener("click", () => this.submitCustomTrack());
+    const confirmBtn = this.btnConfirmCustomTrack || document.getElementById("btnConfirmCustomTrack");
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.submitCustomTrack();
+      });
     }
   }
 
   setCustomTrackSelectedFile(file) {
     this.selectedCustomFile = file;
-    if (this.customTrackFileLabel) {
-      this.customTrackFileLabel.textContent = `已選擇: ${file.name} (${(file.size / 1048576).toFixed(2)} MB)`;
+    const fileLbl = this.customTrackFileLabel || document.getElementById("customTrackFileLabel");
+    if (fileLbl) {
+      fileLbl.textContent = `已選擇: ${file.name} (${(file.size / 1048576).toFixed(2)} MB)`;
     }
-    if (this.customTrackNameInput && !this.customTrackNameInput.value.trim()) {
-      this.customTrackNameInput.value = file.name.replace(/\.[^/.]+$/, "");
+    const nameInp = this.customTrackNameInput || document.getElementById("customTrackNameInput");
+    if (nameInp && !nameInp.value.trim()) {
+      nameInp.value = file.name.replace(/\.[^/.]+$/, "");
     }
   }
 
   openCustomTrackModal(file = null) {
-    this.selectedCustomFile = null;
-    if (this.customTrackFileInput) this.customTrackFileInput.value = "";
-    if (this.customTrackFileLabel) {
-      this.customTrackFileLabel.textContent = "點擊此處瀏覽檔案，或將音訊直接拖放到此處";
+    const modal = this.customTrackModal || document.getElementById("customTrackModal");
+    if (!modal) {
+      alert("找不到 customTrackModal 彈窗元件");
+      return;
     }
-    if (this.customTrackLocalPathInput) this.customTrackLocalPathInput.value = "";
-    if (this.customTrackNameInput) this.customTrackNameInput.value = "";
-    if (this.customTrackCategorySelect) this.customTrackCategorySelect.value = "自訂音軌";
+    this.selectedCustomFile = null;
+    const fileInp = this.customTrackFileInput || document.getElementById("customTrackFileInput");
+    if (fileInp) fileInp.value = "";
+    const fileLbl = this.customTrackFileLabel || document.getElementById("customTrackFileLabel");
+    if (fileLbl) fileLbl.textContent = "點擊此處瀏覽檔案，或將音訊直接拖放到此處";
+    const localInp = this.customTrackLocalPathInput || document.getElementById("customTrackLocalPathInput");
+    if (localInp) localInp.value = "";
+    const nameInp = this.customTrackNameInput || document.getElementById("customTrackNameInput");
+    if (nameInp) nameInp.value = "";
+    const catSel = this.customTrackCategorySelect || document.getElementById("customTrackCategorySelect");
+    if (catSel) catSel.value = "自訂音軌";
 
     const hintEl = document.getElementById("customTrackProjectHint");
     if (hintEl) {
@@ -3463,14 +3511,13 @@ class StemForgeDawApp {
       this.setCustomTrackSelectedFile(file);
     }
 
-    if (this.customTrackModal) {
-      this.customTrackModal.classList.add("active");
-    }
+    modal.classList.add("active");
   }
 
   closeCustomTrackModal() {
-    if (this.customTrackModal) {
-      this.customTrackModal.classList.remove("active");
+    const modal = this.customTrackModal || document.getElementById("customTrackModal");
+    if (modal) {
+      modal.classList.remove("active");
     }
   }
 
