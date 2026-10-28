@@ -3347,6 +3347,226 @@ class StemForgeDawApp {
       this.previewAudioElement.pause();
     }
   }
+
+  // ==========================================
+  // 自訂新增音軌 (Add Custom Track) 模組邏輯
+  // ==========================================
+  initCustomTrackEvents() {
+    if (this.btnAddCustomTrack) {
+      this.btnAddCustomTrack.addEventListener("click", () => this.openCustomTrackModal());
+    }
+    if (this.btnCloseCustomTrack) {
+      this.btnCloseCustomTrack.addEventListener("click", () => this.closeCustomTrackModal());
+    }
+    if (this.btnCancelCustomTrack) {
+      this.btnCancelCustomTrack.addEventListener("click", () => this.closeCustomTrackModal());
+    }
+    if (this.customTrackModal) {
+      this.customTrackModal.addEventListener("click", (e) => {
+        if (e.target === this.customTrackModal) this.closeCustomTrackModal();
+      });
+    }
+
+    if (this.customTrackDropzone && this.customTrackFileInput) {
+      this.customTrackDropzone.addEventListener("click", () => this.customTrackFileInput.click());
+      this.customTrackFileInput.addEventListener("change", (e) => {
+        if (e.target.files.length > 0) {
+          this.setCustomTrackSelectedFile(e.target.files[0]);
+        }
+      });
+      this.customTrackDropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        this.customTrackDropzone.style.borderColor = "#c084fc";
+        this.customTrackDropzone.style.background = "rgba(168, 85, 247, 0.15)";
+      });
+      this.customTrackDropzone.addEventListener("dragleave", () => {
+        this.customTrackDropzone.style.borderColor = "#a855f7";
+        this.customTrackDropzone.style.background = "rgba(168, 85, 247, 0.06)";
+      });
+      this.customTrackDropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        this.customTrackDropzone.style.borderColor = "#a855f7";
+        this.customTrackDropzone.style.background = "rgba(168, 85, 247, 0.06)";
+        if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+          this.setCustomTrackSelectedFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    // 拖曳音訊直接放進 DAW mixer container 即刻開啟新增彈窗
+    if (this.mixerTracksContainer) {
+      this.mixerTracksContainer.addEventListener("dragover", (e) => {
+        if (this.currentJob) {
+          e.preventDefault();
+          this.mixerTracksContainer.classList.add("drag-over-active");
+        }
+      });
+      this.mixerTracksContainer.addEventListener("dragleave", () => {
+        this.mixerTracksContainer.classList.remove("drag-over-active");
+      });
+      this.mixerTracksContainer.addEventListener("drop", (e) => {
+        this.mixerTracksContainer.classList.remove("drag-over-active");
+        if (!this.currentJob) return;
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          e.preventDefault();
+          this.openCustomTrackModal(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    // 預設調色盤點擊
+    document.querySelectorAll(".custom-color-presets .color-dot").forEach((dot) => {
+      dot.addEventListener("click", () => {
+        const c = dot.dataset.color;
+        if (c && this.customTrackColorInput) {
+          this.customTrackColorInput.value = c;
+        }
+      });
+    });
+
+    if (this.btnConfirmCustomTrack) {
+      this.btnConfirmCustomTrack.addEventListener("click", () => this.submitCustomTrack());
+    }
+  }
+
+  setCustomTrackSelectedFile(file) {
+    this.selectedCustomFile = file;
+    if (this.customTrackFileLabel) {
+      this.customTrackFileLabel.textContent = `已選擇: ${file.name} (${(file.size / 1048576).toFixed(2)} MB)`;
+    }
+    if (this.customTrackNameInput && !this.customTrackNameInput.value.trim()) {
+      this.customTrackNameInput.value = file.name.replace(/\.[^/.]+$/, "");
+    }
+  }
+
+  openCustomTrackModal(file = null) {
+    if (!this.currentJob) {
+      alert("請先載入或分離一首歌曲專案，才能新增自訂音軌！");
+      return;
+    }
+    this.selectedCustomFile = null;
+    if (this.customTrackFileInput) this.customTrackFileInput.value = "";
+    if (this.customTrackFileLabel) {
+      this.customTrackFileLabel.textContent = "點擊此處瀏覽檔案，或將音訊直接拖放到此處";
+    }
+    if (this.customTrackLocalPathInput) this.customTrackLocalPathInput.value = "";
+    if (this.customTrackNameInput) this.customTrackNameInput.value = "";
+    if (this.customTrackCategorySelect) this.customTrackCategorySelect.value = "自訂音軌";
+
+    if (file) {
+      this.setCustomTrackSelectedFile(file);
+    }
+
+    if (this.customTrackModal) {
+      this.customTrackModal.classList.add("active");
+    }
+  }
+
+  closeCustomTrackModal() {
+    if (this.customTrackModal) {
+      this.customTrackModal.classList.remove("active");
+    }
+  }
+
+  async submitCustomTrack() {
+    if (!this.currentJob) return;
+
+    const file = this.selectedCustomFile;
+    const localPath = this.customTrackLocalPathInput ? this.customTrackLocalPathInput.value.trim() : "";
+    const trackName = this.customTrackNameInput ? this.customTrackNameInput.value.trim() : "";
+    const groupCategory = this.customTrackCategorySelect ? this.customTrackCategorySelect.value : "自訂音軌";
+    const colorHex = this.customTrackColorInput ? this.customTrackColorInput.value : "#a855f7";
+
+    if (!file && !localPath) {
+      alert("請選擇音訊檔案或輸入電腦本機路徑！");
+      return;
+    }
+
+    this.showBusyOverlay("➕ 正在匯入自訂音軌...", "32-bit SIMD 雙聲道解碼與特徵計算中...", 60, "➕");
+    this.closeCustomTrackModal();
+
+    try {
+      const formData = new FormData();
+      if (file) {
+        formData.append("file", file);
+      }
+      if (localPath) {
+        formData.append("localFilePath", localPath);
+      }
+      if (trackName) {
+        formData.append("trackName", trackName);
+      }
+      formData.append("groupCategory", groupCategory);
+      formData.append("colorHex", colorHex);
+
+      const res = await fetch(`/api/jobs/${this.currentJob.jobId}/tracks/custom`, {
+        method: "POST",
+        body: formData
+      });
+
+      const d = await res.json();
+      if (!res.ok || d.error) {
+        throw new Error(d.error || "匯入自訂音軌失敗");
+      }
+
+      const stem = d.stem;
+
+      // 下載並解碼該音訊進 WebAudio
+      const resAudio = await fetch(`${stem.relativeUrl}?t=${Date.now()}`);
+      const buf = await resAudio.arrayBuffer();
+      const audioBuffer = await this.audioCtx.decodeAudioData(buf);
+
+      const gainNode = this.audioCtx.createGain();
+      const panNode = this.audioCtx.createStereoPanner();
+      panNode.connect(gainNode);
+      gainNode.connect(this.masterGainNode);
+
+      const trackObj = {
+        nodeId: stem.nodeId,
+        meta: stem,
+        audioBuffer,
+        gainNode,
+        panNode,
+        solo: false,
+        mute: false,
+        invertPhase: false,
+        volume: 1.0,
+        pan: 0.0,
+        rowEl: null,
+        canvas: null,
+        playheadEl: null,
+        regions: [{
+          id: 1,
+          startSec: 0,
+          endSec: Math.min(this.durationSec, audioBuffer.duration),
+          muted: false
+        }],
+        nextRegionId: 2,
+        regionsOverlayEl: null,
+        scissorLineEl: null,
+        scissorLabelEl: null,
+        isCustomTrack: true
+      };
+
+      this.tracks.push(trackObj);
+      this.renderTrackStrip(trackObj);
+      this.renderTrackRegions(trackObj);
+
+      setTimeout(() => {
+        this.drawWaveform(trackObj);
+      }, 50);
+
+      this.checkedNodeIds.add(stem.nodeId);
+      this.updateCheckedTracksCount();
+      this.updateTrackGains();
+
+      this.showToast(`✨ 已成功加入音軌：${stem.displayName}`);
+    } catch (err) {
+      alert("新增自訂音軌失敗: " + err.message);
+    } finally {
+      this.hideBusyOverlay();
+    }
+  }
 }
 
 window.addEventListener("DOMContentLoaded", () => {

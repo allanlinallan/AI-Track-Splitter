@@ -259,6 +259,7 @@
         <div class="export-actions">
           <button class="btn btn-select-toggle" id="btnSelectAllTracks" disabled title="一鍵打勾選取全部音軌">☑️ 全選</button>
           <button class="btn btn-select-toggle" id="btnClearAllTracks" disabled title="一鍵清空所有音軌勾選">⬜ 全清</button>
+          <button class="btn btn-add-custom-track" id="btnAddCustomTrack" disabled title="自訂新增音軌 (可上傳 WAV / MP3 / FLAC / M4A 或錄音檔加入此混音專案)">➕ 新增自訂音軌</button>
           <button class="btn btn-save" id="btnSaveProject" disabled title="直接儲存當前專案之消音與剪輯狀態 (快速鍵: Ctrl + S)">💾 儲存專案</button>
           <button class="btn btn-save-as" id="btnSaveAsProject" disabled title="將當前工程另存為全新專案副本">📑 另存新專案...</button>
           <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
@@ -401,5 +402,81 @@
   </div>
 
   <script src="/js/webaudio-daw.js?v=36"></script>
+
+  <!-- ➕ 自訂新增音軌彈窗 (Add Custom Track Modal) -->
+  <div class="history-modal" id="customTrackModal">
+    <div class="history-modal-content" style="max-width: 560px; border: 1px solid #a855f7; box-shadow: 0 10px 35px rgba(168,85,247,0.35);">
+      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
+        <h3 style="color: #c084fc; display: flex; align-items: center; gap: 8px;">➕ 自訂新增音軌 (Add Custom Track)</h3>
+        <button class="btn-close" id="btnCloseCustomTrack">&times;</button>
+      </div>
+      <div style="padding: 24px;">
+        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
+          可匯入您自己的錄音（如人聲、外接吉他、自錄伴奏、效果聲），立即加入當前 WebAudio 多軌混音台，支援即時波形預覽、推子控制、消音剪輯與一鍵合併匯出：
+        </p>
+
+        <!-- 檔案選擇區域 -->
+        <div style="margin-bottom: 16px;">
+          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:8px;">選擇音訊檔案 (支援 WAV / MP3 / FLAC / M4A / OGG / AAC 等)：</label>
+          <div id="customTrackDropzone" style="border: 2px dashed #a855f7; border-radius: 8px; padding: 18px; text-align: center; background: rgba(168,85,247,0.06); cursor: pointer; transition: all 0.2s;">
+            <div style="font-size: 1.8rem; margin-bottom: 6px;">📂</div>
+            <div id="customTrackFileLabel" style="color: #e2e8f0; font-weight: 600; font-size: 0.95rem;">點擊此處瀏覽檔案，或將音訊直接拖放到此處</div>
+            <div style="color: #94a3b8; font-size: 0.8rem; margin-top: 4px;">無大小限制，自動由 32-bit SIMD 引擎轉換對齊</div>
+          </div>
+          <input type="file" id="customTrackFileInput" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aac" style="display:none;" />
+        </div>
+
+        <!-- 本機檔案路徑 (可選) -->
+        <div style="margin-bottom: 16px;">
+          <label style="display:block; color:#94a3b8; font-size:0.82rem; margin-bottom:6px;">或輸入電腦本機絕對路徑 (免上傳極速載入)：</label>
+          <input type="text" id="customTrackLocalPathInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #334155; color:#cbd5e1; padding:8px 12px; border-radius:6px; font-size:0.88rem; outline:none;" placeholder="例如：D:\Recordings\Guitar_Take_01.wav" />
+        </div>
+
+        <!-- 音軌名稱 -->
+        <div style="margin-bottom: 16px;">
+          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">音軌顯示名稱：</label>
+          <input type="text" id="customTrackNameInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #475569; color:#f8fafc; padding:10px 12px; border-radius:6px; font-size:0.95rem; outline:none;" placeholder="例如：木吉他 Solo (Guitar)" />
+        </div>
+
+        <div style="display: flex; gap: 16px; margin-bottom: 22px;">
+          <!-- 分類 -->
+          <div style="flex: 1;">
+            <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">所屬群組 (Reaper Bus 分類)：</label>
+            <select id="customTrackCategorySelect" style="width:100%; background:#0b1120; border:1px solid #475569; color:#f8fafc; padding:9px 12px; border-radius:6px; font-size:0.9rem; outline:none;">
+              <option value="自訂音軌" selected>自訂音軌 (Custom)</option>
+              <option value="Vocals">人聲組 (Vocals)</option>
+              <option value="Guitars">吉他組 (Guitars)</option>
+              <option value="Keys">鍵盤組 (Keys/Piano)</option>
+              <option value="Bass">貝斯組 (Bass)</option>
+              <option value="Drums">鼓組 (Drums)</option>
+              <option value="Other Tracks">其他音軌 (Other Tracks)</option>
+            </select>
+          </div>
+
+          <!-- 配色挑選 -->
+          <div style="flex: 1;">
+            <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">波形專屬顏色：</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input type="color" id="customTrackColorInput" value="#a855f7" style="width:40px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; background:transparent;" />
+              <div class="custom-color-presets" style="display:flex; gap:5px;">
+                <span class="color-dot" data-color="#f43f5e" style="background:#f43f5e; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+                <span class="color-dot" data-color="#a855f7" style="background:#a855f7; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+                <span class="color-dot" data-color="#06b6d4" style="background:#06b6d4; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+                <span class="color-dot" data-color="#10b981" style="background:#10b981; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+                <span class="color-dot" data-color="#f59e0b" style="background:#f59e0b; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+                <span class="color-dot" data-color="#ec4899" style="background:#ec4899; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+          <button class="btn" id="btnCancelCustomTrack" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
+          <button class="btn btn-primary" id="btnConfirmCustomTrack" style="background:linear-gradient(135deg, #a855f7, #7c3aed); color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(168,85,247,0.4);">✨ 建立並載入音軌</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

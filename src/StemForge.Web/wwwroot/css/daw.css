@@ -2057,3 +2057,64 @@ body.tool-mode-mute .clip-region:hover {
   background: #0369a1;
   color: #ffffff;
 }
+
+/* ==========================================
+   自訂新增音軌 (Add Custom Track) 樣式
+   ========================================== */
+.btn-add-custom-track {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #ffffff;
+  font-weight: 700;
+  border: 1px solid #a855f7;
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-add-custom-track:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a855f7, #8b5cf6);
+  box-shadow: 0 4px 14px rgba(168, 85, 247, 0.5);
+  transform: translateY(-1px);
+}
+
+.custom-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #7c3aed;
+  color: #fff;
+  font-weight: bold;
+}
+
+.btn-delete-track {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+  color: #f87171;
+}
+
+.btn-delete-track:hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+.mixer-tracks-container.drag-over-active {
+  border: 2px dashed #a855f7 !important;
+  background: rgba(168, 85, 247, 0.08) !important;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3) inset;
+}
+
+.color-dot {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.color-dot:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}

@@ -146,6 +146,25 @@ public sealed class DagOrchestrator
         var stemFiles = Directory.GetFiles(stemsDir, "*.wav");
         if (stemFiles.Length == 0) return null;
 
+        var customTracksMap = new Dictionary<string, CustomTrackMeta>(StringComparer.OrdinalIgnoreCase);
+        string customMetaPath = Path.Combine(jobDir, "custom_tracks.json");
+        if (File.Exists(customMetaPath))
+        {
+            try
+            {
+                var metaList = JsonSerializer.Deserialize<List<CustomTrackMeta>>(File.ReadAllText(customMetaPath));
+                if (metaList != null)
+                {
+                    foreach (var cm in metaList)
+                    {
+                        if (!string.IsNullOrEmpty(cm.FileName)) customTracksMap[cm.FileName] = cm;
+                        if (!string.IsNullOrEmpty(cm.NodeId)) customTracksMap[cm.NodeId] = cm;
+                    }
+                }
+            }
+            catch { }
+        }
+
         var stemResults = new List<StemTrackResult>();
         foreach (var wavPath in stemFiles)
         {
@@ -160,6 +179,22 @@ public sealed class DagOrchestrator
             string displayName = def?.DisplayName ?? baseName;
             string groupCategory = def?.GroupCategory ?? "Other Tracks";
             string colorHex = def?.ColorHex ?? "#38BDF8";
+            bool isCustom = false;
+
+            if (customTracksMap.TryGetValue(fn, out var cMeta) || customTracksMap.TryGetValue(baseName, out cMeta) || customTracksMap.TryGetValue(nodeId, out cMeta))
+            {
+                nodeId = cMeta.NodeId;
+                displayName = cMeta.DisplayName;
+                groupCategory = cMeta.GroupCategory;
+                colorHex = cMeta.ColorHex;
+                isCustom = true;
+            }
+            else if (baseName.StartsWith("CUSTOM_", StringComparison.OrdinalIgnoreCase))
+            {
+                isCustom = true;
+                groupCategory = "自訂音軌";
+                colorHex = "#a855f7";
+            }
 
             string? midiPath = Path.Combine(jobDir, "midi", $"{baseName}.mid");
             string? midiUrl = File.Exists(midiPath) ? $"/projects/{jobId}/midi/{baseName}.mid" : null;
@@ -179,7 +214,8 @@ public sealed class DagOrchestrator
                 PeakDbFs = -1.0f,
                 RmsDbFs = -20.0f,
                 WaveformPeaks = [],
-                FromCache = true
+                FromCache = true,
+                IsCustomTrack = isCustom
             });
         }
 
@@ -1239,5 +1275,157 @@ public sealed class DagOrchestrator
             string destSub = Path.Combine(targetDir, Path.GetFileName(subDir));
             CopyDirectoryRecursively(subDir, destSub);
         }
+    }
+
+    /// <summary>
+    /// 自訂新增音軌：將使用者上傳或指定的音訊檔轉為 32-bit Float WAV，計算波形特徵並加入現有分軌專案中
+    /// </summary>
+    public async Task<StemTrackResult?> AddCustomTrackAsync(
+        string jobId,
+        string sourceFilePath,
+        string? trackName,
+        string? groupCategory,
+        string? colorHex,
+        CancellationToken ct = default)
+    {
+        var job = GetJobResult(jobId);
+        if (job == null) return null;
+
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        string stemsDir = Path.Combine(jobDir, "stems");
+        Directory.CreateDirectory(stemsDir);
+
+        // 讀取立體聲音訊
+        var audio = WavFileIo.ReadStereoAudio(sourceFilePath);
+        var metrics = WavFileIo.AnalyzeAudioMetrics(audio);
+
+        string cleanName = string.Join("_", (trackName ?? "Custom").Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+        if (string.IsNullOrWhiteSpace(cleanName)) cleanName = "Custom_Track";
+
+        string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        string customStemFileName = $"CUSTOM_{timestamp}_{cleanName}.wav";
+        string customWavPath = Path.Combine(stemsDir, customStemFileName);
+
+        WavFileIo.WriteFloat32Wav(customWavPath, audio);
+
+        string customNodeId = $"STEM_CUSTOM_{Guid.NewGuid():N}"[..20].ToUpperInvariant();
+        string chosenColor = !string.IsNullOrWhiteSpace(colorHex) ? colorHex : PickNextColor(job.Stems.Count);
+        string chosenCategory = !string.IsNullOrWhiteSpace(groupCategory) ? groupCategory : "自訂音軌";
+
+        var stemResult = new StemTrackResult
+        {
+            NodeId = customNodeId,
+            DisplayName = !string.IsNullOrWhiteSpace(trackName) ? trackName.Trim() : cleanName,
+            GroupCategory = chosenCategory,
+            ColorHex = chosenColor,
+            FilePath = customWavPath,
+            RelativeUrl = $"/projects/{jobId}/stems/{customStemFileName}",
+            DurationSeconds = audio.DurationSeconds,
+            SampleRate = audio.SampleRate,
+            PeakDbFs = metrics.PeakDbFs,
+            RmsDbFs = metrics.RmsDbFs,
+            WaveformPeaks = metrics.WaveformPeaks,
+            FromCache = false,
+            IsCustomTrack = true
+        };
+
+        job.Stems.Add(stemResult);
+
+        // 保存自訂音軌中繼資料 (custom_tracks.json)
+        string customMetaPath = Path.Combine(jobDir, "custom_tracks.json");
+        List<CustomTrackMeta> metaList = [];
+        if (File.Exists(customMetaPath))
+        {
+            try
+            {
+                metaList = JsonSerializer.Deserialize<List<CustomTrackMeta>>(await File.ReadAllTextAsync(customMetaPath, ct)) ?? [];
+            }
+            catch { }
+        }
+        metaList.Add(new CustomTrackMeta(
+            customNodeId,
+            stemResult.DisplayName,
+            stemResult.GroupCategory,
+            stemResult.ColorHex,
+            customStemFileName
+        ));
+        await File.WriteAllTextAsync(customMetaPath, JsonSerializer.Serialize(metaList, new JsonSerializerOptions { WriteIndented = true }), ct);
+
+        // 重新產生 Reaper 工程檔
+        try
+        {
+            string rppPath = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp");
+            ReaperRppGenerator.GenerateReaperProjectFile(
+                rppPath,
+                job.OriginalFileName,
+                job.SampleRate > 0 ? job.SampleRate : 48000,
+                job.DurationSeconds > 0 ? job.DurationSeconds : audio.DurationSeconds,
+                job.Stems);
+        }
+        catch { }
+
+        return stemResult;
+    }
+
+    /// <summary>
+    /// 刪除專案中的自訂音軌
+    /// </summary>
+    public async Task<bool> DeleteCustomTrackAsync(string jobId, string nodeId, CancellationToken ct = default)
+    {
+        var job = GetJobResult(jobId);
+        if (job == null) return false;
+
+        var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+        if (stem == null) return false;
+
+        job.Stems.Remove(stem);
+
+        if (File.Exists(stem.FilePath))
+        {
+            try { File.Delete(stem.FilePath); } catch { }
+        }
+        string origBackup = Path.Combine(Path.GetDirectoryName(stem.FilePath)!, $"{Path.GetFileNameWithoutExtension(stem.FilePath)}.orig.wav");
+        if (File.Exists(origBackup))
+        {
+            try { File.Delete(origBackup); } catch { }
+        }
+        if (!string.IsNullOrEmpty(stem.MidiFilePath) && File.Exists(stem.MidiFilePath))
+        {
+            try { File.Delete(stem.MidiFilePath); } catch { }
+        }
+
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        string customMetaPath = Path.Combine(jobDir, "custom_tracks.json");
+        if (File.Exists(customMetaPath))
+        {
+            try
+            {
+                var metaList = JsonSerializer.Deserialize<List<CustomTrackMeta>>(await File.ReadAllTextAsync(customMetaPath, ct)) ?? [];
+                metaList.RemoveAll(m => string.Equals(m.NodeId, nodeId, StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(m.FileName, Path.GetFileName(stem.FilePath), StringComparison.OrdinalIgnoreCase));
+                await File.WriteAllTextAsync(customMetaPath, JsonSerializer.Serialize(metaList, new JsonSerializerOptions { WriteIndented = true }), ct);
+            }
+            catch { }
+        }
+
+        try
+        {
+            string rppPath = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp");
+            ReaperRppGenerator.GenerateReaperProjectFile(
+                rppPath,
+                job.OriginalFileName,
+                job.SampleRate > 0 ? job.SampleRate : 48000,
+                job.DurationSeconds,
+                job.Stems);
+        }
+        catch { }
+
+        return true;
+    }
+
+    private static string PickNextColor(int count)
+    {
+        string[] palette = ["#f43f5e", "#a855f7", "#06b6d4", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#14b8a6", "#e11d48", "#6366f1"];
+        return palette[Math.Abs(count) % palette.Length];
     }
 }

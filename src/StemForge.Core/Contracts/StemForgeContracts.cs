@@ -78,7 +78,16 @@ public sealed record StemTrackResult
     public float RmsDbFs { get; init; }
     public float[] WaveformPeaks { get; init; } = [];
     public bool FromCache { get; init; }
+    public bool IsCustomTrack { get; init; } = false;
 }
+
+public sealed record CustomTrackMeta(
+    string NodeId,
+    string DisplayName,
+    string GroupCategory,
+    string ColorHex,
+    string FileName
+);
 
 public sealed record SeparationJobResult
 {

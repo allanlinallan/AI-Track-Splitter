@@ -1183,6 +1183,111 @@ app.MapPost("/api/jobs/{jobId}/prompt/{prompt}", async (
     return Results.Ok(new { stem, job });
 });
 
+// 11. 自訂新增音軌 (可由使用者上傳 WAV/MP3/FLAC/M4A/OGG 等任意音源加入當前專案)
+app.MapPost("/api/jobs/{jobId}/tracks/custom", async (
+    string jobId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    if (!httpReq.HasFormContentType)
+        return Results.BadRequest(new { error = "請求必須為 FormContentType (multipart/form-data)" });
+
+    var form = await httpReq.ReadFormAsync(ct);
+    var file = form.Files.GetFile("file");
+    string? localPath = form["localFilePath"].FirstOrDefault();
+    string? trackName = form["trackName"].FirstOrDefault();
+    string? groupCategory = form["groupCategory"].FirstOrDefault();
+    string? colorHex = form["colorHex"].FirstOrDefault();
+
+    string tempSourceFile = "";
+    bool isTempFile = false;
+
+    if (file is { Length: > 0 })
+    {
+        string ext = Path.GetExtension(file.FileName);
+        tempSourceFile = Path.Combine(Path.GetTempPath(), $"stemforge_custom_{Guid.NewGuid():N}{ext}");
+        await using var fs = new FileStream(tempSourceFile, FileMode.Create, FileAccess.Write);
+        await file.CopyToAsync(fs, ct);
+        isTempFile = true;
+
+        if (string.IsNullOrWhiteSpace(trackName))
+        {
+            trackName = Path.GetFileNameWithoutExtension(file.FileName);
+        }
+    }
+    else if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath.Trim('"')))
+    {
+        tempSourceFile = localPath.Trim('"');
+        if (string.IsNullOrWhiteSpace(trackName))
+        {
+            trackName = Path.GetFileNameWithoutExtension(tempSourceFile);
+        }
+    }
+    else
+    {
+        return Results.BadRequest(new { error = "請上傳音訊檔案或提供有效的本機檔案路徑。" });
+    }
+
+    try
+    {
+        var stem = await orchestrator.AddCustomTrackAsync(
+            jobId,
+            tempSourceFile,
+            trackName,
+            groupCategory,
+            colorHex,
+            ct);
+
+        if (stem == null)
+            return Results.BadRequest(new { error = "新增自訂音軌失敗，請確認檔案格式是否有效。" });
+
+        try
+        {
+            var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+            jsonOpts.Converters.Add(new JsonStringEnumConverter());
+            await File.WriteAllTextAsync(Path.Combine(wwwrootDir, "latest_gpu_job.json"), JsonSerializer.Serialize(job, jsonOpts), ct);
+        }
+        catch { }
+
+        return Results.Ok(new { stem, job });
+    }
+    finally
+    {
+        if (isTempFile && File.Exists(tempSourceFile))
+        {
+            try { File.Delete(tempSourceFile); } catch { }
+        }
+    }
+});
+
+// 12. 刪除自訂音軌
+app.MapDelete("/api/jobs/{jobId}/tracks/{nodeId}", async (
+    string jobId,
+    string nodeId,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    bool ok = await orchestrator.DeleteCustomTrackAsync(jobId, nodeId, ct);
+    if (!ok) return Results.NotFound(new { error = "找不到該音軌或無法刪除" });
+
+    try
+    {
+        var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+        jsonOpts.Converters.Add(new JsonStringEnumConverter());
+        await File.WriteAllTextAsync(Path.Combine(wwwrootDir, "latest_gpu_job.json"), JsonSerializer.Serialize(job, jsonOpts), ct);
+    }
+    catch { }
+
+    return Results.Ok(new { success = true, nodeId });
+});
+
 static string CalculateTransposedKey(string origKey, int semitones)
 {
     string[] pitches = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
