@@ -2324,3 +2324,48 @@ body.tool-mode-drag .track-waveform-wrap:active {
 .track-row.drop-target-below {
   border-bottom: 2.5px solid #38bdf8 !important;
 }
+
+/* 微調步進量選擇器 (Nudge Step Selector) */
+.nudge-step-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 2px 6px;
+  user-select: none;
+}
+
+.nudge-step-select {
+  background: #0f172a;
+  color: #38bdf8;
+  border: 1px solid #38bdf8;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  padding: 1px 3px;
+  cursor: pointer;
+  outline: none;
+}
+
+.nudge-step-select:hover {
+  border-color: #7dd3fc;
+}
+
+.nudge-edit-input {
+  width: 44px;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 2px;
+  font-size: 10px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  padding: 0;
+}

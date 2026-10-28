@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
-  <link rel="stylesheet" href="/css/daw.css?v=10" />
+  <link rel="stylesheet" href="/css/daw.css?v=11" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=1" />
   <link rel="apple-touch-icon" href="/images/logo.png?v=1" />
@@ -173,6 +173,19 @@
           <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 3)">✂️ 剪刀</button>
           <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 4)">🔇 片段消音</button>
           <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段與平移">⟲ 重置剪輯</button>
+          <span style="color: #334155; margin: 0 4px;">|</span>
+          <label class="nudge-step-label" title="設定音軌 ◀ / ▶ 按鈕微調步進量 (可選 0.5ms ~ 50ms)">
+            <span>微調步進:</span>
+            <select id="selNudgeStep" class="nudge-step-select">
+              <option value="0.0005">0.5ms</option>
+              <option value="0.001" selected>1ms</option>
+              <option value="0.002">2ms</option>
+              <option value="0.005">5ms</option>
+              <option value="0.010">10ms</option>
+              <option value="0.020">20ms</option>
+              <option value="0.050">50ms</option>
+            </select>
+          </label>
           <span style="color: #334155; margin: 0 4px;">|</span>
           <button class="edit-tool-btn btn-tool-trim" id="btnAutoTrimSilence" title="AI 自動偵測開頭無音訊靜音，智慧對齊第 1 拍（自動識別弱起拍/半拍起音）">⚡ 自動切齊開頭</button>
           <button class="edit-tool-btn btn-tool-reset" id="btnResetTrim" style="display: none;" title="恢復原始開頭位置">⟲ 恢復原點</button>
@@ -478,7 +491,7 @@
     </div>
   </div>
 
-  <script src="/js/webaudio-daw.js?v=42"></script>
+  <script src="/js/webaudio-daw.js?v=43"></script>
 
   <div id="dragOffsetBadge" class="drag-offset-badge">↔️ +0.0 ms</div>
 </body>

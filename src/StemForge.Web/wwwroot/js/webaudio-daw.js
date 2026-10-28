@@ -1256,27 +1256,86 @@ class StemForgeDawApp {
       }
     });
 
-    // 綁定步進微調按鈕
+    // 綁定步進微調按鈕 (步進量可自選，預設 1ms)
     const btnNudgeLeft = row.querySelector(".btn-nudge-left");
     const btnNudgeRight = row.querySelector(".btn-nudge-right");
     const nudgeValBadge = row.querySelector(".nudge-val-badge");
 
+    const getNudgeStep = (e) => {
+      let baseStep = 0.001; // 預設 1ms
+      const sel = document.getElementById("selNudgeStep");
+      if (sel) {
+        baseStep = parseFloat(sel.value) || 0.001;
+      }
+      if (e && e.shiftKey) return baseStep * 0.1; // Shift: 1/10 步進 (0.1ms)
+      if (e && e.ctrlKey) return baseStep * 5;    // Ctrl: 5倍步進
+      return baseStep;
+    };
+
     if (btnNudgeLeft) {
       btnNudgeLeft.addEventListener("click", (e) => {
-        const step = e.shiftKey ? 0.001 : (e.ctrlKey ? 0.05 : 0.01);
+        const step = getNudgeStep(e);
         this.setTrackOffset(track, (track.offsetSec || 0) - step, true);
       });
     }
     if (btnNudgeRight) {
       btnNudgeRight.addEventListener("click", (e) => {
-        const step = e.shiftKey ? 0.001 : (e.ctrlKey ? 0.05 : 0.01);
+        const step = getNudgeStep(e);
         this.setTrackOffset(track, (track.offsetSec || 0) + step, true);
       });
     }
     if (nudgeValBadge) {
-      nudgeValBadge.addEventListener("dblclick", () => {
+      // 滾輪微調：滑鼠懸浮在數值上滾動滾輪即可即時增減
+      nudgeValBadge.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const step = getNudgeStep(e);
+        const direction = e.deltaY < 0 ? 1 : -1;
+        this.setTrackOffset(track, (track.offsetSec || 0) + direction * step, true);
+      }, { passive: false });
+
+      // 雙擊數值歸零
+      nudgeValBadge.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
         this.setTrackOffset(track, 0, true);
         this.showToast(`⟲ [${meta.displayName}] 平移已歸零`);
+      });
+
+      // 點擊手動精確輸入數值 (例如輸入 +3.2 或 -15)
+      nudgeValBadge.addEventListener("click", (e) => {
+        if (nudgeValBadge.querySelector("input")) return;
+        const currentMs = (track.offsetSec || 0) * 1000;
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "nudge-edit-input";
+        input.value = currentMs.toFixed(1);
+
+        nudgeValBadge.textContent = "";
+        nudgeValBadge.appendChild(input);
+        input.focus();
+        input.select();
+
+        let applied = false;
+        const applyInput = () => {
+          if (applied) return;
+          applied = true;
+          const val = parseFloat(input.value);
+          if (!isNaN(val)) {
+            this.setTrackOffset(track, val / 1000, true);
+            this.showToast(`↔️ [${meta.displayName}] 平移已設為 ${val >= 0 ? "+" : ""}${val.toFixed(1)} ms`);
+          } else {
+            this.updateTrackOffsetDisplay(track);
+          }
+        };
+
+        input.addEventListener("keydown", (ke) => {
+          if (ke.key === "Enter") {
+            applyInput();
+          } else if (ke.key === "Escape") {
+            applied = true;
+            this.updateTrackOffsetDisplay(track);
+          }
+        });
+        input.addEventListener("blur", applyInput);
       });
     }
 
@@ -1659,11 +1718,12 @@ class StemForgeDawApp {
   updateTrackOffsetDisplay(track) {
     if (!track.rowEl) return;
     const badge = track.rowEl.querySelector(".nudge-val-badge");
-    if (!badge) return;
+    if (!badge || badge.querySelector("input")) return;
     const ms = (track.offsetSec || 0) * 1000;
-    const sign = ms > 0.001 ? "+" : "";
-    badge.textContent = Math.abs(ms) < 0.1 ? "0ms" : `${sign}${Math.round(ms)}ms`;
-    badge.title = `目前平移量: ${sign}${ms.toFixed(1)} ms (雙擊歸零)`;
+    const sign = ms > 0.0001 ? "+" : "";
+    const text = Math.abs(ms) < 0.05 ? "0ms" : `${sign}${ms.toFixed(1).replace(/\.0$/, "")}ms`;
+    badge.textContent = text;
+    badge.title = `目前平移量: ${sign}${ms.toFixed(2)} ms (點擊手動輸入數值 / 滾輪微調 / 雙擊歸零)`;
   }
 
   setTrackOffset(track, offsetSec, syncBackend = true) {
