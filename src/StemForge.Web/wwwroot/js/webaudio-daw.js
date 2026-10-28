@@ -3116,7 +3116,8 @@ class StemForgeDawApp {
         pan: t.pan,
         mute: !!t.mute,
         solo: !!t.solo,
-        invertPhase: !!t.invertPhase
+        invertPhase: !!t.invertPhase,
+        offsetSec: typeof t.offsetSec === "number" ? t.offsetSec : 0.0
       };
     }
     return {

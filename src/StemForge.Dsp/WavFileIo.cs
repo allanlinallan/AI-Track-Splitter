@@ -41,6 +41,22 @@ public sealed class StereoAudioBuffer
 public static class WavFileIo
 {
     /// <summary>
+    /// 快速讀取音訊檔案時長與取樣率 (僅讀取檔頭，不佔用解碼記憶體)
+    /// </summary>
+    public static (double DurationSeconds, int SampleRate) GetAudioFileInfo(string filePath)
+    {
+        try
+        {
+            using var reader = new NAudio.Wave.AudioFileReader(filePath);
+            return (Math.Round(reader.TotalTime.TotalSeconds, 3), reader.WaveFormat.SampleRate);
+        }
+        catch
+        {
+            return (0, 48000);
+        }
+    }
+
+    /// <summary>
     /// 讀取 MP3 / WAV / FLAC / MP4 / MKV / MOV 等音訊或影片檔，若為影片或非標準格式則自動以 FFmpeg 提取無損 32-bit Float 雙聲道
     /// </summary>
     public static StereoAudioBuffer ReadStereoAudio(string filePath)

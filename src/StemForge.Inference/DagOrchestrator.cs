@@ -122,6 +122,8 @@ public sealed class DagOrchestrator
         string origWav = Path.Combine(jobDir, "00_Original_Mix.wav");
         if (!File.Exists(origWav) || !Directory.Exists(stemsDir)) return null;
 
+        var (origDuration, origSampleRate) = WavFileIo.GetAudioFileInfo(origWav);
+
         string songName = jobId;
         string projNameFile = Path.Combine(jobDir, "project_name.txt");
         if (File.Exists(projNameFile))
@@ -309,8 +311,8 @@ public sealed class DagOrchestrator
             SourceAudioPath = origWav,
             SourceAudioUrl = $"/projects/{jobId}/00_Original_Mix.wav",
             ActiveMode = SeparationMode.BitAccurateResidual,
-            DurationSeconds = 0,
-            SampleRate = 48000,
+            DurationSeconds = origDuration,
+            SampleRate = origSampleRate,
             NullTestCancellationDbFs = -128.0f,
             ReaperRppUrl = rppUrl,
             DetectedKey = detectedKey,
@@ -1401,6 +1403,22 @@ public sealed class DagOrchestrator
             {
                 newJob.ProjectStateJson = trackStatesJson;
             }
+
+            // 同步產生新專案之 Reaper 工程檔 (.rpp)
+            string rppFileName = $"{cleanName}_StemForge.rpp";
+            string rppPath = Path.Combine(targetDir, rppFileName);
+            try
+            {
+                ReaperRppGenerator.GenerateReaperProjectFile(
+                    rppPath,
+                    cleanName,
+                    newJob.SampleRate > 0 ? newJob.SampleRate : 48000,
+                    newJob.DurationSeconds,
+                    newJob.Stems);
+                newJob.ReaperRppUrl = $"/projects/{newJobId}/{Uri.EscapeDataString(rppFileName)}";
+            }
+            catch { }
+
             _jobs[newJobId] = newJob;
         }
 
@@ -1418,9 +1436,25 @@ public sealed class DagOrchestrator
         string statePath = Path.Combine(jobDir, "project_state.json");
         await File.WriteAllTextAsync(statePath, trackStatesJson, ct);
 
-        if (_jobs.TryGetValue(jobId, out var job))
+        var job = GetJobResult(jobId);
+        if (job != null)
         {
             job.ProjectStateJson = trackStatesJson;
+
+            // 同步更新最新 Reaper 工程檔 (.rpp)
+            try
+            {
+                string rppFileName = $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp";
+                string rppPath = Path.Combine(jobDir, rppFileName);
+                ReaperRppGenerator.GenerateReaperProjectFile(
+                    rppPath,
+                    job.OriginalFileName,
+                    job.SampleRate > 0 ? job.SampleRate : 48000,
+                    job.DurationSeconds,
+                    job.Stems);
+                job.ReaperRppUrl = $"/projects/{jobId}/{Uri.EscapeDataString(rppFileName)}";
+            }
+            catch { }
         }
         return true;
     }
