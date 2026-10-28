@@ -2357,15 +2357,18 @@ body.tool-mode-drag .track-waveform-wrap:active {
 }
 
 .nudge-edit-input {
-  width: 44px;
-  background: #0284c7;
+  width: 48px;
+  height: 16px;
+  line-height: 16px;
+  background: #0369a1;
   color: #ffffff;
-  border: none;
+  border: 1px solid #38bdf8;
   border-radius: 2px;
   font-size: 10px;
   font-family: Consolas, monospace;
   font-weight: 700;
   text-align: center;
   outline: none;
-  padding: 0;
+  padding: 0 1px;
+  box-sizing: border-box;
 }

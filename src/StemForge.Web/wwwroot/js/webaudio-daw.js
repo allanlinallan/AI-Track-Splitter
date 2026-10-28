@@ -1307,7 +1307,13 @@ class StemForgeDawApp {
         const input = document.createElement("input");
         input.type = "text";
         input.className = "nudge-edit-input";
-        input.value = currentMs.toFixed(1);
+        input.value = parseFloat(currentMs.toFixed(2));
+
+        // 避免 input 內部事件冒泡至外層 badge (防止觸發 dblclick 歸零等)
+        input.addEventListener("click", (ev) => ev.stopPropagation());
+        input.addEventListener("dblclick", (ev) => ev.stopPropagation());
+        input.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        input.addEventListener("wheel", (ev) => ev.stopPropagation());
 
         nudgeValBadge.textContent = "";
         nudgeValBadge.appendChild(input);
@@ -1315,27 +1321,53 @@ class StemForgeDawApp {
         input.select();
 
         let applied = false;
-        const applyInput = () => {
+        const cleanupAndApply = (commit) => {
           if (applied) return;
           applied = true;
-          const val = parseFloat(input.value);
-          if (!isNaN(val)) {
-            this.setTrackOffset(track, val / 1000, true);
-            this.showToast(`↔️ [${meta.displayName}] 平移已設為 ${val >= 0 ? "+" : ""}${val.toFixed(1)} ms`);
-          } else {
-            this.updateTrackOffsetDisplay(track);
+
+          let targetSec = track.offsetSec || 0;
+          if (commit) {
+            const cleanStr = input.value.trim().replace(/ms$/i, "").trim();
+            const val = parseFloat(cleanStr);
+            if (!isNaN(val)) {
+              targetSec = val / 1000;
+            }
+          }
+
+          // 核心修復：先將 input 移除清空，使 updateTrackOffsetDisplay 能夠正常寫入文字徽章
+          nudgeValBadge.innerHTML = "";
+          this.setTrackOffset(track, targetSec, true);
+          this.updateTrackOffsetDisplay(track);
+
+          if (commit && Math.abs((track.offsetSec || 0) * 1000) > 0.001) {
+            const finalMs = (track.offsetSec || 0) * 1000;
+            this.showToast(`↔️ [${meta.displayName}] 平移已設為 ${finalMs >= 0 ? "+" : ""}${finalMs.toFixed(1)} ms`);
           }
         };
 
         input.addEventListener("keydown", (ke) => {
           if (ke.key === "Enter") {
-            applyInput();
+            ke.preventDefault();
+            cleanupAndApply(true);
           } else if (ke.key === "Escape") {
-            applied = true;
-            this.updateTrackOffsetDisplay(track);
+            ke.preventDefault();
+            cleanupAndApply(false);
+          } else if (ke.key === "ArrowUp") {
+            ke.preventDefault();
+            const stepMs = getNudgeStep(ke) * 1000;
+            const curVal = parseFloat(input.value) || 0;
+            input.value = parseFloat((curVal + stepMs).toFixed(2));
+            input.select();
+          } else if (ke.key === "ArrowDown") {
+            ke.preventDefault();
+            const stepMs = getNudgeStep(ke) * 1000;
+            const curVal = parseFloat(input.value) || 0;
+            input.value = parseFloat((curVal - stepMs).toFixed(2));
+            input.select();
           }
         });
-        input.addEventListener("blur", applyInput);
+
+        input.addEventListener("blur", () => cleanupAndApply(true));
       });
     }
 
@@ -1720,14 +1752,15 @@ class StemForgeDawApp {
     const badge = track.rowEl.querySelector(".nudge-val-badge");
     if (!badge || badge.querySelector("input")) return;
     const ms = (track.offsetSec || 0) * 1000;
-    const sign = ms > 0.0001 ? "+" : "";
-    const text = Math.abs(ms) < 0.05 ? "0ms" : `${sign}${ms.toFixed(1).replace(/\.0$/, "")}ms`;
+    const cleanNum = parseFloat(ms.toFixed(2));
+    const sign = cleanNum > 0 ? "+" : "";
+    const text = Math.abs(cleanNum) < 0.05 ? "0ms" : `${sign}${cleanNum}ms`;
     badge.textContent = text;
-    badge.title = `目前平移量: ${sign}${ms.toFixed(2)} ms (點擊手動輸入數值 / 滾輪微調 / 雙擊歸零)`;
+    badge.title = `目前平移量: ${sign}${cleanNum} ms (點擊手動輸入數值 / 滾輪微調 / 雙擊歸零)`;
   }
 
   setTrackOffset(track, offsetSec, syncBackend = true) {
-    track.offsetSec = Math.round(offsetSec * 1000) / 1000;
+    track.offsetSec = Math.round(offsetSec * 10000) / 10000;
     this.updateTrackOffsetDisplay(track);
     this.drawWaveform(track);
     this.renderTrackRegions(track);
