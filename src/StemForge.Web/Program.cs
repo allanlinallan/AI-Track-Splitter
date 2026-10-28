@@ -1190,7 +1190,34 @@ app.MapPost("/api/jobs/{jobId}/tracks/custom", async (
     DagOrchestrator orchestrator,
     CancellationToken ct) =>
 {
-    var job = orchestrator.GetJobResult(jobId);
+    SeparationJobResult? job = null;
+    if (jobId.Equals("new", StringComparison.OrdinalIgnoreCase))
+    {
+        string newJobId = Guid.NewGuid().ToString("N")[..10];
+        string newJobDir = Path.Combine(projectsDir, newJobId);
+        Directory.CreateDirectory(newJobDir);
+        string newStemsDir = Path.Combine(newJobDir, "stems");
+        Directory.CreateDirectory(newStemsDir);
+
+        job = new SeparationJobResult
+        {
+            JobId = newJobId,
+            OriginalFileName = "自訂多軌工程",
+            SourceAudioPath = "",
+            SourceAudioUrl = "",
+            ActiveMode = SeparationMode.BitAccurateResidual,
+            DurationSeconds = 0,
+            SampleRate = 48000,
+            Stems = []
+        };
+        orchestrator.RegisterJob(job);
+        jobId = newJobId;
+    }
+    else
+    {
+        job = orchestrator.GetJobResult(jobId);
+    }
+
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
     if (!httpReq.HasFormContentType)

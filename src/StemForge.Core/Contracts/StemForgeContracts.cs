@@ -93,11 +93,11 @@ public sealed record SeparationJobResult
 {
     public required string JobId { get; init; }
     public required string OriginalFileName { get; set; }
-    public required string SourceAudioUrl { get; init; }
-    public required string SourceAudioPath { get; init; }
-    public required SeparationMode ActiveMode { get; set; }
-    public double DurationSeconds { get; init; }
-    public int SampleRate { get; init; }
+    public string SourceAudioUrl { get; set; } = "";
+    public string SourceAudioPath { get; set; } = "";
+    public SeparationMode ActiveMode { get; set; } = SeparationMode.BitAccurateResidual;
+    public double DurationSeconds { get; set; }
+    public int SampleRate { get; set; }
     public float NullTestCancellationDbFs { get; set; }
     public string? ReaperRppUrl { get; set; }
     public string? ZipArchiveUrl { get; set; }

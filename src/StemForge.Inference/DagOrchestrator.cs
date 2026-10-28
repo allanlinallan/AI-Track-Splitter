@@ -39,6 +39,8 @@ public sealed class DagOrchestrator
 
     public IReadOnlyCollection<SeparationJobResult> GetAllJobs() => _jobs.Values.ToList();
 
+    public void RegisterJob(SeparationJobResult job) => _jobs[job.JobId] = job;
+
     public bool DeleteProject(string jobId)
     {
         _jobs.TryRemove(jobId, out _);
@@ -1307,6 +1309,23 @@ public sealed class DagOrchestrator
         string customWavPath = Path.Combine(stemsDir, customStemFileName);
 
         WavFileIo.WriteFloat32Wav(customWavPath, audio);
+
+        // 若為新工程（尚未有原曲母帶），自動以第一軌作為專案母帶參照軌
+        string origWav = Path.Combine(jobDir, "00_Original_Mix.wav");
+        if (!File.Exists(origWav))
+        {
+            File.Copy(customWavPath, origWav, overwrite: true);
+            job.SourceAudioPath = origWav;
+            job.SourceAudioUrl = $"/projects/{jobId}/00_Original_Mix.wav";
+            job.DurationSeconds = audio.DurationSeconds;
+            job.SampleRate = audio.SampleRate;
+            job.OriginalFileName = cleanName;
+            try
+            {
+                await File.WriteAllTextAsync(Path.Combine(jobDir, "project_name.txt"), cleanName, ct);
+            }
+            catch { }
+        }
 
         string customNodeId = $"STEM_CUSTOM_{Guid.NewGuid():N}"[..20].ToUpperInvariant();
         string chosenColor = !string.IsNullOrWhiteSpace(colorHex) ? colorHex : PickNextColor(job.Stems.Count);

@@ -2071,9 +2071,14 @@ body.tool-mode-mute .clip-region:hover {
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
   transition: all 0.2s ease;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.btn-add-custom-track:hover:not(:disabled) {
+.btn-add-custom-track:hover {
   background: linear-gradient(135deg, #a855f7, #8b5cf6);
   box-shadow: 0 4px 14px rgba(168, 85, 247, 0.5);
   transform: translateY(-1px);

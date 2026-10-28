@@ -3440,10 +3440,6 @@ class StemForgeDawApp {
   }
 
   openCustomTrackModal(file = null) {
-    if (!this.currentJob) {
-      alert("請先載入或分離一首歌曲專案，才能新增自訂音軌！");
-      return;
-    }
     this.selectedCustomFile = null;
     if (this.customTrackFileInput) this.customTrackFileInput.value = "";
     if (this.customTrackFileLabel) {
@@ -3452,6 +3448,16 @@ class StemForgeDawApp {
     if (this.customTrackLocalPathInput) this.customTrackLocalPathInput.value = "";
     if (this.customTrackNameInput) this.customTrackNameInput.value = "";
     if (this.customTrackCategorySelect) this.customTrackCategorySelect.value = "自訂音軌";
+
+    const hintEl = document.getElementById("customTrackProjectHint");
+    if (hintEl) {
+      if (!this.currentJob) {
+        hintEl.style.display = "block";
+        hintEl.textContent = "💡 目前尚未載入專案，系統將自動以此音軌為您建立全新多軌 DAW 混音工程！";
+      } else {
+        hintEl.style.display = "none";
+      }
+    }
 
     if (file) {
       this.setCustomTrackSelectedFile(file);
@@ -3469,8 +3475,6 @@ class StemForgeDawApp {
   }
 
   async submitCustomTrack() {
-    if (!this.currentJob) return;
-
     const file = this.selectedCustomFile;
     const localPath = this.customTrackLocalPathInput ? this.customTrackLocalPathInput.value.trim() : "";
     const trackName = this.customTrackNameInput ? this.customTrackNameInput.value.trim() : "";
@@ -3499,7 +3503,8 @@ class StemForgeDawApp {
       formData.append("groupCategory", groupCategory);
       formData.append("colorHex", colorHex);
 
-      const res = await fetch(`/api/jobs/${this.currentJob.jobId}/tracks/custom`, {
+      const targetJobId = this.currentJob ? this.currentJob.jobId : "new";
+      const res = await fetch(`/api/jobs/${targetJobId}/tracks/custom`, {
         method: "POST",
         body: formData
       });
@@ -3507,6 +3512,13 @@ class StemForgeDawApp {
       const d = await res.json();
       if (!res.ok || d.error) {
         throw new Error(d.error || "匯入自訂音軌失敗");
+      }
+
+      // 若原先尚未載入專案，直接將全新建立的工程載入 DAW 混音台
+      if (!this.currentJob) {
+        await this.loadJobIntoMixer(d.job);
+        this.showToast(`✨ 已建立全新多軌專案並載入音軌：${d.stem.displayName}`);
+        return;
       }
 
       const stem = d.stem;

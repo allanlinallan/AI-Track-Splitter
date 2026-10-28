@@ -259,7 +259,7 @@
         <div class="export-actions">
           <button class="btn btn-select-toggle" id="btnSelectAllTracks" disabled title="一鍵打勾選取全部音軌">☑️ 全選</button>
           <button class="btn btn-select-toggle" id="btnClearAllTracks" disabled title="一鍵清空所有音軌勾選">⬜ 全清</button>
-          <button class="btn btn-add-custom-track" id="btnAddCustomTrack" disabled title="自訂新增音軌 (可上傳 WAV / MP3 / FLAC / M4A 或錄音檔加入此混音專案)">➕ 新增自訂音軌</button>
+          <button class="btn btn-add-custom-track" id="btnAddCustomTrack" title="自訂新增音軌 (可上傳 WAV / MP3 / FLAC / M4A 或錄音檔加入此混音專案)">➕ 新增自訂音軌</button>
           <button class="btn btn-save" id="btnSaveProject" disabled title="直接儲存當前專案之消音與剪輯狀態 (快速鍵: Ctrl + S)">💾 儲存專案</button>
           <button class="btn btn-save-as" id="btnSaveAsProject" disabled title="將當前工程另存為全新專案副本">📑 另存新專案...</button>
           <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
@@ -401,9 +401,7 @@
     </div>
   </div>
 
-  <script src="/js/webaudio-daw.js?v=36"></script>
-
-  <!-- ➕ 自訂新增音軌彈窗 (Add Custom Track Modal) -->
+    <!-- ➕ 自訂新增音軌彈窗 (Add Custom Track Modal) -->
   <div class="history-modal" id="customTrackModal">
     <div class="history-modal-content" style="max-width: 560px; border: 1px solid #a855f7; box-shadow: 0 10px 35px rgba(168,85,247,0.35);">
       <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
@@ -411,6 +409,7 @@
         <button class="btn-close" id="btnCloseCustomTrack">&times;</button>
       </div>
       <div style="padding: 24px;">
+        <div id="customTrackProjectHint" style="display:none; color:#c084fc; font-size:0.85rem; margin-bottom:12px; background:rgba(168,85,247,0.12); padding:8px 12px; border-radius:6px; border:1px solid rgba(168,85,247,0.3);"></div>
         <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
           可匯入您自己的錄音（如人聲、外接吉他、自錄伴奏、效果聲），立即加入當前 WebAudio 多軌混音台，支援即時波形預覽、推子控制、消音剪輯與一鍵合併匯出：
         </p>
@@ -477,6 +476,8 @@
       </div>
     </div>
   </div>
+
+  <script src="/js/webaudio-daw.js?v=38"></script>
 
 </body>
 </html>
