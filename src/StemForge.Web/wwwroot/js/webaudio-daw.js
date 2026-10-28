@@ -1014,6 +1014,7 @@ class StemForgeDawApp {
         this.drawWaveform(t);
       }
       this.renderLeadTrimOverlays();
+      this.updateTrackOrderButtons();
       this.hideBusyOverlay();
     }, 50);
 
@@ -1032,6 +1033,13 @@ class StemForgeDawApp {
 
     row.innerHTML = `
       <div class="track-info">
+        ${meta.isOriginalReference ? "" : `
+          <div class="track-drag-handle" title="按住可上下拖曳調整音軌順序 (拖至人聲旁比對)" draggable="true">⠿</div>
+          <div class="track-reorder-btns">
+            <button class="btn-track-move btn-track-up" title="上移一軌 (與上方音軌並列比對)">▲</button>
+            <button class="btn-track-move btn-track-down" title="下移一軌">▼</button>
+          </div>
+        `}
         <div class="track-select-box">
           <input type="checkbox" class="track-select-chk" title="勾選以加入自訂打包下載" ${meta.isOriginalReference ? "" : "checked"} />
         </div>
@@ -1415,7 +1423,166 @@ class StemForgeDawApp {
     if (btnTrackRemove) btnTrackRemove.addEventListener("click", handleTrackDelete);
     if (btnDeleteTrack) btnDeleteTrack.addEventListener("click", handleTrackDelete);
 
+    const btnTrackUp = row.querySelector(".btn-track-move.btn-track-up");
+    const btnTrackDown = row.querySelector(".btn-track-move.btn-track-down");
+    if (btnTrackUp) {
+      btnTrackUp.addEventListener("click", () => this.moveTrack(track, -1));
+    }
+    if (btnTrackDown) {
+      btnTrackDown.addEventListener("click", () => this.moveTrack(track, 1));
+    }
+    this.initTrackRowDragAndDrop(track, row);
+
     this.mixerTracksContainer.appendChild(row);
+  }
+
+  moveTrack(track, direction) {
+    const fromIdx = this.tracks.findIndex((t) => t.nodeId === track.nodeId);
+    if (fromIdx < 0) return;
+
+    // Track 0 (原曲參照軌) 固定在最頂部，不可移至其他位置
+    const minIdx = (this.tracks[0] && this.tracks[0].meta.isOriginalReference) ? 1 : 0;
+    const toIdx = fromIdx + direction;
+
+    if (toIdx < minIdx || toIdx >= this.tracks.length) {
+      return; // 已在最頂或最底
+    }
+
+    // 1. 交換陣列中的元素
+    const [movedTrack] = this.tracks.splice(fromIdx, 1);
+    this.tracks.splice(toIdx, 0, movedTrack);
+
+    // 2. 移動 DOM 節點
+    if (toIdx >= this.tracks.length - 1) {
+      this.mixerTracksContainer.appendChild(movedTrack.rowEl);
+    } else {
+      const nextTrack = this.tracks[toIdx + 1];
+      this.mixerTracksContainer.insertBefore(movedTrack.rowEl, nextTrack.rowEl);
+    }
+
+    // 3. 重新繪製波形確保渲染正確
+    this.drawWaveform(movedTrack);
+    this.drawWaveform(this.tracks[fromIdx]);
+
+    // 4. 動態更新所有音軌的 ▲/▼ 按鈕啟用狀態
+    this.updateTrackOrderButtons();
+
+    this.showToast(`${direction < 0 ? "⬆️" : "⬇️"} 音軌 [${movedTrack.meta.displayName}] 已${direction < 0 ? "上移" : "下移"}`);
+    
+    // 5. 同步後端工程檔與持久化排序
+    this.persistTrackOrder();
+  }
+
+  updateTrackOrderButtons() {
+    const minIdx = (this.tracks[0] && this.tracks[0].meta.isOriginalReference) ? 1 : 0;
+    for (let i = 0; i < this.tracks.length; i++) {
+      const t = this.tracks[i];
+      if (!t.rowEl) continue;
+      const btnUp = t.rowEl.querySelector(".btn-track-move.btn-track-up");
+      const btnDown = t.rowEl.querySelector(".btn-track-move.btn-track-down");
+      if (btnUp) btnUp.disabled = (i <= minIdx);
+      if (btnDown) btnDown.disabled = (i >= this.tracks.length - 1);
+    }
+  }
+
+  async persistTrackOrder() {
+    const jobId = this.currentJob ? this.currentJob.jobId : "";
+    if (!jobId) return;
+
+    const orderedNodeIds = this.tracks
+      .filter((t) => !t.meta.isOriginalReference)
+      .map((t) => t.nodeId);
+
+    try {
+      await fetch(`/api/jobs/${jobId}/tracks/reorder`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedNodeIds })
+      });
+    } catch (err) {
+      console.warn("Persist track order error:", err);
+    }
+  }
+
+  initTrackRowDragAndDrop(track, row) {
+    if (track.meta.isOriginalReference) return;
+
+    const handle = row.querySelector(".track-drag-handle");
+    if (!handle) return;
+
+    handle.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", track.nodeId);
+      row.classList.add("track-dragging-row");
+    });
+
+    handle.addEventListener("dragend", () => {
+      row.classList.remove("track-dragging-row");
+      const targets = this.mixerTracksContainer.querySelectorAll(".drop-target-above, .drop-target-below");
+      targets.forEach((el) => el.classList.remove("drop-target-above", "drop-target-below"));
+    });
+
+    row.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer.types.includes("text/plain")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+
+      const rect = row.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        row.classList.add("drop-target-above");
+        row.classList.remove("drop-target-below");
+      } else {
+        row.classList.add("drop-target-below");
+        row.classList.remove("drop-target-above");
+      }
+    });
+
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drop-target-above", "drop-target-below");
+    });
+
+    row.addEventListener("drop", (e) => {
+      if (!e.dataTransfer.types.includes("text/plain")) return;
+      e.preventDefault();
+      row.classList.remove("drop-target-above", "drop-target-below");
+
+      const draggedNodeId = e.dataTransfer.getData("text/plain");
+      if (!draggedNodeId || draggedNodeId === track.nodeId) return;
+
+      const fromIdx = this.tracks.findIndex((t) => t.nodeId === draggedNodeId);
+      let toIdx = this.tracks.findIndex((t) => t.nodeId === track.nodeId);
+      if (fromIdx < 0 || toIdx < 0) return;
+
+      const minIdx = (this.tracks[0] && this.tracks[0].meta.isOriginalReference) ? 1 : 0;
+      const rect = row.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+
+      if (e.clientY < midY && toIdx > fromIdx) {
+        toIdx--;
+      } else if (e.clientY >= midY && toIdx < fromIdx) {
+        toIdx++;
+      }
+
+      if (toIdx < minIdx) toIdx = minIdx;
+      if (toIdx >= this.tracks.length) toIdx = this.tracks.length - 1;
+      if (fromIdx === toIdx) return;
+
+      const [draggedTrack] = this.tracks.splice(fromIdx, 1);
+      this.tracks.splice(toIdx, 0, draggedTrack);
+
+      if (toIdx >= this.tracks.length - 1) {
+        this.mixerTracksContainer.appendChild(draggedTrack.rowEl);
+      } else {
+        const nextTrack = this.tracks[toIdx + 1];
+        this.mixerTracksContainer.insertBefore(draggedTrack.rowEl, nextTrack.rowEl);
+      }
+
+      this.drawWaveform(draggedTrack);
+      this.updateTrackOrderButtons();
+      this.showToast(`↕️ 音軌 [${draggedTrack.meta.displayName}] 已重新排序`);
+      this.persistTrackOrder();
+    });
   }
 
   async deleteTrack(track) {
@@ -3972,6 +4139,7 @@ class StemForgeDawApp {
       this.updateCheckedTracksCount();
       this.updateTrackGains();
 
+      this.updateTrackOrderButtons();
       this.showToast(`✨ 已成功加入音軌：${stem.displayName}`);
     } catch (err) {
       alert("新增自訂音軌失敗: " + err.message);

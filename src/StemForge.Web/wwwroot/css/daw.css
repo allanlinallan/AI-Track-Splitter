@@ -1214,7 +1214,7 @@ body {
 
 .track-row {
   display: grid;
-  grid-template-columns: 300px 205px 1fr 140px;
+  grid-template-columns: 285px 290px 1fr 140px;
   grid-template-rows: 58px;
   align-items: stretch;
   background: var(--bg-track);
@@ -1300,11 +1300,11 @@ body {
 .track-controls {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 10px;
+  gap: 6px;
+  padding: 0 8px;
   border-right: 1px solid #1e293b;
   height: 58px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .m-btn {
@@ -1348,7 +1348,8 @@ body {
   justify-content: center;
   flex: 1;
   gap: 5px;
-  min-width: 65px;
+  min-width: 50px;
+  max-width: 85px;
 }
 
 .fader-wrap input[type="range"] {
@@ -2258,4 +2259,68 @@ body.tool-mode-drag .track-waveform-wrap:active {
 .nudge-val-badge:hover {
   color: #7dd3fc;
   text-decoration: underline;
+}
+
+/* 音軌垂直拖曳與重新排序 (Track Vertical Drag & Drop) */
+.track-drag-handle {
+  color: #475569;
+  font-size: 13px;
+  cursor: grab;
+  padding: 0 3px;
+  user-select: none;
+  line-height: 1;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.track-drag-handle:hover {
+  color: #38bdf8;
+}
+
+.track-drag-handle:active {
+  cursor: grabbing;
+}
+
+.track-reorder-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.btn-track-move {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 8px;
+  line-height: 1;
+  padding: 1px 3px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+}
+
+.btn-track-move:hover:not(:disabled) {
+  background: #334155;
+  color: #38bdf8;
+  transform: scale(1.15);
+}
+
+.btn-track-move:disabled {
+  opacity: 0.18;
+  cursor: default;
+}
+
+.track-row.track-dragging-row {
+  opacity: 0.45;
+  background: rgba(30, 41, 59, 0.85) !important;
+}
+
+.track-row.drop-target-above {
+  border-top: 2.5px solid #38bdf8 !important;
+}
+
+.track-row.drop-target-below {
+  border-bottom: 2.5px solid #38bdf8 !important;
 }

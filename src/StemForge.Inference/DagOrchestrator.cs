@@ -277,6 +277,31 @@ public sealed class DagOrchestrator
             try { projectStateJson = File.ReadAllText(statePath); } catch { }
         }
 
+        string orderMetaPath = Path.Combine(jobDir, "track_order.json");
+        if (File.Exists(orderMetaPath))
+        {
+            try
+            {
+                var orderList = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(orderMetaPath));
+                if (orderList != null && orderList.Count > 0)
+                {
+                    var stemMap = stemResults.ToDictionary(s => s.NodeId, StringComparer.OrdinalIgnoreCase);
+                    var sorted = new List<StemTrackResult>();
+                    foreach (var nid in orderList)
+                    {
+                        if (stemMap.TryGetValue(nid, out var s))
+                        {
+                            sorted.Add(s);
+                            stemMap.Remove(nid);
+                        }
+                    }
+                    sorted.AddRange(stemMap.Values);
+                    stemResults = sorted;
+                }
+            }
+            catch { }
+        }
+
         var restored = new SeparationJobResult
         {
             JobId = jobId,
@@ -1619,6 +1644,52 @@ public sealed class DagOrchestrator
         catch { }
 
         return stem;
+    }
+
+    /// <summary>
+    /// 重新排序專案中的音軌
+    /// </summary>
+    public async Task<bool> ReorderTracksAsync(string jobId, List<string> orderedNodeIds, CancellationToken ct = default)
+    {
+        var job = GetJobResult(jobId);
+        if (job == null || orderedNodeIds == null || orderedNodeIds.Count == 0) return false;
+
+        var stemMap = job.Stems.ToDictionary(s => s.NodeId, StringComparer.OrdinalIgnoreCase);
+        var sorted = new List<StemTrackResult>();
+        foreach (var nid in orderedNodeIds)
+        {
+            if (stemMap.TryGetValue(nid, out var s))
+            {
+                sorted.Add(s);
+                stemMap.Remove(nid);
+            }
+        }
+        sorted.AddRange(stemMap.Values);
+
+        job.Stems.Clear();
+        job.Stems.AddRange(sorted);
+
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        string orderMetaPath = Path.Combine(jobDir, "track_order.json");
+        try
+        {
+            await File.WriteAllTextAsync(orderMetaPath, JsonSerializer.Serialize(orderedNodeIds, new JsonSerializerOptions { WriteIndented = true }), ct);
+        }
+        catch { }
+
+        try
+        {
+            string rppPath = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp");
+            ReaperRppGenerator.GenerateReaperProjectFile(
+                rppPath,
+                job.OriginalFileName,
+                job.SampleRate > 0 ? job.SampleRate : 48000,
+                job.DurationSeconds,
+                job.Stems);
+        }
+        catch { }
+
+        return true;
     }
 
     private static string PickNextColor(int count)

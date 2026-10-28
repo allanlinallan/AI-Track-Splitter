@@ -1375,6 +1375,41 @@ app.MapPost("/api/jobs/{jobId}/tracks/{nodeId}/offset", async (
     });
 });
 
+// 15. 音軌垂直重新排序 (Track Reorder)
+app.MapPost("/api/jobs/{jobId}/tracks/reorder", async (
+    string jobId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    using var doc = await JsonDocument.ParseAsync(httpReq.Body, cancellationToken: ct);
+    var orderedList = new List<string>();
+    if (doc.RootElement.TryGetProperty("orderedNodeIds", out var arrProp) && arrProp.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var item in arrProp.EnumerateArray())
+        {
+            var str = item.GetString();
+            if (!string.IsNullOrEmpty(str)) orderedList.Add(str);
+        }
+    }
+
+    bool ok = await orchestrator.ReorderTracksAsync(jobId, orderedList, ct);
+    if (!ok) return Results.BadRequest(new { error = "音軌重新排序失敗" });
+
+    try
+    {
+        var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+        jsonOpts.Converters.Add(new JsonStringEnumConverter());
+        await File.WriteAllTextAsync(Path.Combine(wwwrootDir, "latest_gpu_job.json"), JsonSerializer.Serialize(job, jsonOpts), ct);
+    }
+    catch { }
+
+    return Results.Ok(new { success = true, orderedNodeIds = orderedList });
+});
+
 static string CalculateTransposedKey(string origKey, int semitones)
 {
     string[] pitches = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
