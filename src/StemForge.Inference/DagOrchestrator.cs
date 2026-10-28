@@ -455,7 +455,8 @@ public sealed class DagOrchestrator
         Func<ProgressUpdateEvent, Task> onProgress,
         CancellationToken ct = default)
     {
-        if (!_jobs.TryGetValue(jobId, out var existing))
+        var existing = GetJobResult(jobId);
+        if (existing == null)
             return null;
 
         string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
@@ -473,6 +474,7 @@ public sealed class DagOrchestrator
         foreach (var stem in existing.Stems)
         {
             if (stem.NodeId == StemNodeIds.ResidualBitAccurate) continue;
+            if (stem.IsCustomTrack) continue; // 自訂音軌非 AI 生成節點，不參與 raw_stems 殘差計算
             if (stem.NodeId.StartsWith(StemNodeIds.CustomAudioSepPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 customPrompts.Add(stem.NodeId[StemNodeIds.CustomAudioSepPrefix.Length..].ToLowerInvariant());
@@ -489,7 +491,7 @@ public sealed class DagOrchestrator
             }
         }
 
-        var selectedIds = existing.Stems.Select(s => s.NodeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selectedIds = existing.Stems.Where(s => !s.IsCustomTrack).Select(s => s.NodeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (newMode == SeparationMode.BitAccurateResidual)
             selectedIds.Add(StemNodeIds.ResidualBitAccurate);
 
@@ -1099,6 +1101,123 @@ public sealed class DagOrchestrator
         }
 
         float nullTestDb = ResidualConservator.CalculateNullTestCancellationDbFs(originalMix, allBuffersForNullTest);
+
+        // 保留/恢復使用者自訂音軌 (Custom Tracks)
+        var customStems = new List<StemTrackResult>();
+        if (_jobs.TryGetValue(jobId, out var prevJob))
+        {
+            foreach (var s in prevJob.Stems.Where(st => st.IsCustomTrack))
+            {
+                if (!customStems.Any(c => string.Equals(c.NodeId, s.NodeId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    customStems.Add(s);
+                }
+            }
+        }
+
+        string customMetaPath = Path.Combine(jobDir, "custom_tracks.json");
+        if (File.Exists(customMetaPath))
+        {
+            try
+            {
+                var metaList = JsonSerializer.Deserialize<List<CustomTrackMeta>>(File.ReadAllText(customMetaPath));
+                if (metaList != null)
+                {
+                    foreach (var cm in metaList)
+                    {
+                        if (customStems.Any(c => string.Equals(c.NodeId, cm.NodeId, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        string customWavPath = Path.Combine(activeStemsDir, cm.FileName);
+                        if (!File.Exists(customWavPath))
+                        {
+                            string candidate = Path.Combine(activeStemsDir, $"{cm.FileName}.wav");
+                            if (File.Exists(candidate)) customWavPath = candidate;
+                        }
+                        if (File.Exists(customWavPath))
+                        {
+                            var audio = WavFileIo.ReadStereoAudio(customWavPath);
+                            var metrics = WavFileIo.AnalyzeAudioMetrics(audio);
+                            customStems.Add(new StemTrackResult
+                            {
+                                NodeId = cm.NodeId,
+                                DisplayName = cm.DisplayName,
+                                GroupCategory = cm.GroupCategory,
+                                ColorHex = cm.ColorHex,
+                                FilePath = customWavPath,
+                                RelativeUrl = $"/projects/{jobId}/stems/{Path.GetFileName(customWavPath)}",
+                                DurationSeconds = cm.DurationSeconds > 0 ? cm.DurationSeconds : Math.Round(audio.DurationSeconds, 3),
+                                SampleRate = audio.SampleRate,
+                                PeakDbFs = metrics.PeakDbFs,
+                                RmsDbFs = metrics.RmsDbFs,
+                                WaveformPeaks = metrics.WaveformPeaks,
+                                FromCache = true,
+                                IsCustomTrack = true,
+                                OffsetSeconds = cm.OffsetSeconds
+                            });
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        stemResults.AddRange(customStems);
+
+        // 恢復所有音軌之時間軸平移量 (Track Offsets)
+        string offsetsPath = Path.Combine(jobDir, "track_offsets.json");
+        var trackOffsetsMap = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        if (File.Exists(offsetsPath))
+        {
+            try
+            {
+                var offList = JsonSerializer.Deserialize<Dictionary<string, double>>(File.ReadAllText(offsetsPath));
+                if (offList != null) trackOffsetsMap = offList;
+            }
+            catch { }
+        }
+
+        foreach (var s in stemResults)
+        {
+            if (trackOffsetsMap.TryGetValue(s.NodeId, out var offVal))
+            {
+                s.OffsetSeconds = offVal;
+            }
+            else if (prevJob != null)
+            {
+                var prevStem = prevJob.Stems.FirstOrDefault(p => string.Equals(p.NodeId, s.NodeId, StringComparison.OrdinalIgnoreCase));
+                if (prevStem != null && prevStem.OffsetSeconds != 0)
+                {
+                    s.OffsetSeconds = prevStem.OffsetSeconds;
+                }
+            }
+        }
+
+        // 恢復音軌自訂垂直排序 (Track Order)
+        string orderMetaPath = Path.Combine(jobDir, "track_order.json");
+        if (File.Exists(orderMetaPath))
+        {
+            try
+            {
+                var orderList = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(orderMetaPath));
+                if (orderList != null && orderList.Count > 0)
+                {
+                    var stemMap = stemResults.ToDictionary(s => s.NodeId, StringComparer.OrdinalIgnoreCase);
+                    var sorted = new List<StemTrackResult>();
+                    foreach (var nid in orderList)
+                    {
+                        if (stemMap.TryGetValue(nid, out var s))
+                        {
+                            sorted.Add(s);
+                            stemMap.Remove(nid);
+                        }
+                    }
+                    sorted.AddRange(stemMap.Values);
+                    stemResults = sorted;
+                }
+            }
+            catch { }
+        }
 
         var jobResult = new SeparationJobResult
         {
