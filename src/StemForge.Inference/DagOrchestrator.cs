@@ -167,6 +167,18 @@ public sealed class DagOrchestrator
             catch { }
         }
 
+        var trackOffsetsMap = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        string offsetsPath = Path.Combine(jobDir, "track_offsets.json");
+        if (File.Exists(offsetsPath))
+        {
+            try
+            {
+                var offList = JsonSerializer.Deserialize<Dictionary<string, double>>(File.ReadAllText(offsetsPath));
+                if (offList != null) trackOffsetsMap = offList;
+            }
+            catch { }
+        }
+
         var stemResults = new List<StemTrackResult>();
         foreach (var wavPath in stemFiles)
         {
@@ -201,6 +213,10 @@ public sealed class DagOrchestrator
             string? midiPath = Path.Combine(jobDir, "midi", $"{baseName}.mid");
             string? midiUrl = File.Exists(midiPath) ? $"/projects/{jobId}/midi/{baseName}.mid" : null;
 
+            double initialOffset = 0.0;
+            if (trackOffsetsMap.TryGetValue(nodeId, out var oVal)) initialOffset = oVal;
+            else if (customTracksMap.TryGetValue(nodeId, out var cMetaObj)) initialOffset = cMetaObj.OffsetSeconds;
+
             stemResults.Add(new StemTrackResult
             {
                 NodeId = nodeId,
@@ -217,7 +233,8 @@ public sealed class DagOrchestrator
                 RmsDbFs = -20.0f,
                 WaveformPeaks = [],
                 FromCache = true,
-                IsCustomTrack = isCustom
+                IsCustomTrack = isCustom,
+                OffsetSeconds = initialOffset
             });
         }
 
@@ -1523,6 +1540,65 @@ public sealed class DagOrchestrator
                 if (idx >= 0)
                 {
                     metaList[idx] = metaList[idx] with { DurationSeconds = newAudio.DurationSeconds };
+                    await File.WriteAllTextAsync(customMetaPath, JsonSerializer.Serialize(metaList, new JsonSerializerOptions { WriteIndented = true }), ct);
+                }
+            }
+            catch { }
+        }
+
+        // 重新產生 Reaper 工程檔
+        try
+        {
+            string rppPath = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp");
+            ReaperRppGenerator.GenerateReaperProjectFile(
+                rppPath,
+                job.OriginalFileName,
+                job.SampleRate > 0 ? job.SampleRate : 48000,
+                job.DurationSeconds,
+                job.Stems);
+        }
+        catch { }
+
+        return stem;
+    }
+
+    /// <summary>
+    /// 設定音軌時間軸平移對齊量 (Track Offset / Slip)
+    /// </summary>
+    public async Task<StemTrackResult?> SetTrackOffsetAsync(string jobId, string nodeId, double offsetSec, CancellationToken ct = default)
+    {
+        var job = GetJobResult(jobId);
+        if (job == null) return null;
+
+        var stem = job.Stems.FirstOrDefault(s => string.Equals(s.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+        if (stem == null) return null;
+
+        stem.OffsetSeconds = Math.Round(offsetSec, 4);
+
+        string jobDir = Path.Combine(_workspaceDataDir, "projects", jobId);
+        string offsetsPath = Path.Combine(jobDir, "track_offsets.json");
+        try
+        {
+            var offsets = File.Exists(offsetsPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, double>>(await File.ReadAllTextAsync(offsetsPath, ct)) ?? new(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
+            offsets[nodeId] = stem.OffsetSeconds;
+            await File.WriteAllTextAsync(offsetsPath, JsonSerializer.Serialize(offsets, new JsonSerializerOptions { WriteIndented = true }), ct);
+        }
+        catch { }
+
+        // 更新 custom_tracks.json（若為自訂軌）
+        string customMetaPath = Path.Combine(jobDir, "custom_tracks.json");
+        if (File.Exists(customMetaPath))
+        {
+            try
+            {
+                var metaList = JsonSerializer.Deserialize<List<CustomTrackMeta>>(await File.ReadAllTextAsync(customMetaPath, ct)) ?? [];
+                int idx = metaList.FindIndex(x => string.Equals(x.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0)
+                {
+                    metaList[idx] = metaList[idx] with { OffsetSeconds = stem.OffsetSeconds };
                     await File.WriteAllTextAsync(customMetaPath, JsonSerializer.Serialize(metaList, new JsonSerializerOptions { WriteIndented = true }), ct);
                 }
             }

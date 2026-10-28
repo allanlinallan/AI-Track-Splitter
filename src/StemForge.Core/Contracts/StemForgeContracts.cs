@@ -80,6 +80,7 @@ public sealed record StemTrackResult
     public bool FromCache { get; set; }
     public bool IsCustomTrack { get; set; } = false;
     public bool IsOriginalReference { get; set; } = false;
+    public double OffsetSeconds { get; set; } = 0.0;
 }
 
 public sealed record CustomTrackMeta(
@@ -88,7 +89,8 @@ public sealed record CustomTrackMeta(
     string GroupCategory,
     string ColorHex,
     string FileName,
-    double DurationSeconds = 0.0
+    double DurationSeconds = 0.0,
+    double OffsetSeconds = 0.0
 );
 
 public sealed record SeparationJobResult

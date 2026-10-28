@@ -1348,6 +1348,33 @@ app.MapPost("/api/jobs/{jobId}/tracks/{nodeId}/ripple-cut", async (
     });
 });
 
+// 14. 音軌時間軸平移對齊 (Track Offset / Slip Alignment)
+app.MapPost("/api/jobs/{jobId}/tracks/{nodeId}/offset", async (
+    string jobId,
+    string nodeId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    using var doc = await JsonDocument.ParseAsync(httpReq.Body, cancellationToken: ct);
+    double offsetSec = 0;
+    if (doc.RootElement.TryGetProperty("offsetSec", out var oProp)) offsetSec = oProp.GetDouble();
+
+    var updatedStem = await orchestrator.SetTrackOffsetAsync(jobId, nodeId, offsetSec, ct);
+    if (updatedStem == null) return Results.NotFound(new { error = "找不到該音軌或處理失敗" });
+
+    return Results.Ok(new
+    {
+        success = true,
+        nodeId = updatedStem.NodeId,
+        offsetSeconds = updatedStem.OffsetSeconds,
+        message = $"已設定音軌平移為 {offsetSec * 1000:F1} ms"
+    });
+});
+
 static string CalculateTransposedKey(string origKey, int semitones)
 {
     string[] pitches = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];

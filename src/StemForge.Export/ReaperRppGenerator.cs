@@ -66,7 +66,15 @@ public static class ReaperRppGenerator
                 sb.AppendLine("    MUTESOLO 0 0 0");
                 sb.AppendLine(isLastInFolder ? "    ISBUS 2 -1" : "    ISBUS 0 0");
                 sb.AppendLine("    <ITEM");
-                sb.AppendLine("      POSITION 0");
+                if (stem.OffsetSeconds >= 0)
+                {
+                    sb.AppendLine($"      POSITION {stem.OffsetSeconds.ToString("F6", inv)}");
+                }
+                else
+                {
+                    sb.AppendLine("      POSITION 0");
+                    sb.AppendLine($"      SOFFS {Math.Abs(stem.OffsetSeconds).ToString("F6", inv)}");
+                }
                 sb.AppendLine($"      LENGTH {durationSeconds.ToString("F6", inv)}");
                 sb.AppendLine("      FADEIN 1 0 0 1 0 0 0");
                 sb.AppendLine("      FADEOUT 1 0 0 1 0 0 0");

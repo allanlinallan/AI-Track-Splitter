@@ -2179,3 +2179,83 @@ body.tool-mode-mute .clip-region:hover {
   transform: scale(1.2);
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }
+
+/* 拖曳對齊模式與游標 (Drag / Slip Align) */
+body.tool-mode-drag .track-waveform-wrap {
+  cursor: grab !important;
+}
+
+body.tool-mode-drag .track-waveform-wrap.track-dragging,
+body.tool-mode-drag .track-waveform-wrap:active {
+  cursor: grabbing !important;
+}
+
+.track-waveform-wrap.track-dragging {
+  cursor: grabbing !important;
+  box-shadow: inset 0 0 0 1.5px rgba(56, 189, 248, 0.65);
+}
+
+/* 拖曳微調即時懸浮徽章 (Floating Drag Offset Badge) */
+.drag-offset-badge {
+  position: fixed;
+  display: none;
+  background: rgba(15, 23, 42, 0.95);
+  color: #38bdf8;
+  border: 1px solid #38bdf8;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 99999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+/* 音軌微調步進器 (Track Nudge Widget) */
+.track-nudge-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin-left: 2px;
+}
+
+.btn-nudge-step {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 9px;
+  padding: 1px 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  line-height: 1;
+  transition: all 0.1s ease;
+}
+
+.btn-nudge-step:hover {
+  background: #38bdf8;
+  color: #0f172a;
+  font-weight: 700;
+  transform: scale(1.1);
+}
+
+.nudge-val-badge {
+  color: #38bdf8;
+  font-size: 9.5px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  min-width: 36px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nudge-val-badge:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}

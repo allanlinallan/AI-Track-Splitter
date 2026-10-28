@@ -132,12 +132,16 @@ class StemForgeDawApp {
     // ✂️ 編曲剪輯工具箱 (Pointer, Scissors, Mute)
     this.currentTool = "pointer"; // "pointer" | "scissors" | "mute"
     this.btnToolPointer = document.getElementById("btnToolPointer");
+    this.btnToolDrag = document.getElementById("btnToolDrag");
     this.btnToolScissors = document.getElementById("btnToolScissors");
     this.btnToolMute = document.getElementById("btnToolMute");
     this.btnResetClips = document.getElementById("btnResetClips");
 
     if (this.btnToolPointer) {
       this.btnToolPointer.addEventListener("click", () => this.setToolMode("pointer"));
+    }
+    if (this.btnToolDrag) {
+      this.btnToolDrag.addEventListener("click", () => this.setToolMode("drag"));
     }
     if (this.btnToolScissors) {
       this.btnToolScissors.addEventListener("click", () => this.setToolMode("scissors"));
@@ -158,8 +162,9 @@ class StemForgeDawApp {
       }
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       if (e.key === "1") this.setToolMode("pointer");
-      else if (e.key === "2") this.setToolMode("scissors");
-      else if (e.key === "3") this.setToolMode("mute");
+      else if (e.key === "2") this.setToolMode("drag");
+      else if (e.key === "3") this.setToolMode("scissors");
+      else if (e.key === "4") this.setToolMode("mute");
     });
 
     // 💾 儲存與另存專案元件綁定
@@ -986,7 +991,8 @@ class StemForgeDawApp {
         nextRegionId: nextRegId,
         regionsOverlayEl: null,
         scissorLineEl: null,
-        scissorLabelEl: null
+        scissorLabelEl: null,
+        offsetSec: stem.offsetSeconds || (savedState ? (typeof savedState.offsetSec === "number" ? savedState.offsetSec : 0.0) : 0.0)
       };
 
       this.tracks.push(trackObj);
@@ -1044,6 +1050,13 @@ class StemForgeDawApp {
           <input type="range" class="vol-slider" min="0" max="4.0" step="0.02" value="${track.volume ?? 1.0}" title="音量推子: 0.0 dB (100%)" />
           <input type="range" class="pan-slider" min="-1" max="1" step="0.05" value="${track.pan ?? 0.0}" title="立體聲 Pan (L/R)" />
         </div>
+        ${meta.isOriginalReference ? "" : `
+        <div class="track-nudge-widget" title="平移對齊微調：點擊 ◀ 提前 10ms，點擊 ▶ 延後 10ms (Shift: 1ms, Ctrl: 50ms) / 雙擊歸零">
+          <button class="btn-nudge-step btn-nudge-left" title="提前 10ms (Shift: 1ms, Ctrl: 50ms)">◀</button>
+          <span class="nudge-val-badge" title="目前平移量 (雙擊歸零)">0ms</span>
+          <button class="btn-nudge-step btn-nudge-right" title="延後 10ms (Shift: 1ms, Ctrl: 50ms)">▶</button>
+        </div>
+        `}
       </div>
       <div class="track-waveform-wrap">
         <canvas class="track-waveform-canvas" height="58"></canvas>
@@ -1144,6 +1157,55 @@ class StemForgeDawApp {
       track.panNode.pan.value = track.pan;
     });
 
+    // ↔️ 滑鼠按住波形拖曳對齊 (Drag to Align / Slip Edit)
+    let isMouseDown = false;
+    let startClientX = 0;
+    let initialOffset = 0;
+    let hasDragged = false;
+
+    wfWrap.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".clip-action-pill") || e.button !== 0) return;
+      if (this.currentTool === "scissors" || this.currentTool === "mute") return;
+
+      isMouseDown = true;
+      startClientX = e.clientX;
+      initialOffset = track.offsetSec || 0.0;
+      hasDragged = false;
+    });
+
+    const onWindowMouseMove = (e) => {
+      if (!isMouseDown) return;
+      const deltaPx = e.clientX - startClientX;
+      if (!hasDragged && Math.abs(deltaPx) > 3) {
+        hasDragged = true;
+        wfWrap.classList.add("track-dragging");
+      }
+      if (hasDragged) {
+        const rect = wfWrap.getBoundingClientRect();
+        const deltaSec = (deltaPx / rect.width) * (this.durationSec || 60);
+        track.offsetSec = Math.round((initialOffset + deltaSec) * 1000) / 1000;
+        this.drawWaveform(track);
+        this.renderTrackRegions(track);
+        this.updateTrackOffsetDisplay(track);
+        this.showDragBadge(e.clientX, e.clientY, track.offsetSec);
+      }
+    };
+
+    const onWindowMouseUp = (e) => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+      wfWrap.classList.remove("track-dragging");
+      this.hideDragBadge();
+
+      if (hasDragged) {
+        this.setTrackOffset(track, track.offsetSec, true);
+        this.showToast(`↔️ [${meta.displayName}] 平移已對齊至 ${track.offsetSec >= 0 ? "+" : ""}${(track.offsetSec * 1000).toFixed(1)} ms`);
+      }
+    };
+
+    window.addEventListener("mousemove", onWindowMouseMove);
+    window.addEventListener("mouseup", onWindowMouseUp);
+
     wfWrap.addEventListener("mousemove", (e) => {
       if (this.currentTool === "scissors") {
         const rect = wfWrap.getBoundingClientRect();
@@ -1164,6 +1226,7 @@ class StemForgeDawApp {
 
     wfWrap.addEventListener("click", (e) => {
       if (e.target.closest(".clip-action-pill")) return;
+      if (hasDragged) return; // 拖曳結束時不觸發跳轉播放
 
       const rect = wfWrap.getBoundingClientRect();
       const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
@@ -1177,11 +1240,37 @@ class StemForgeDawApp {
         if (reg) {
           this.toggleRegionMute(track, reg.id);
         }
+      } else if (this.currentTool === "drag") {
+        // 拖曳模式下單純點擊不做跳轉
       } else {
         const targetSec = Math.max(0, clickSec - (this.leadTrimSec || 0));
         this.seekTo(targetSec);
       }
     });
+
+    // 綁定步進微調按鈕
+    const btnNudgeLeft = row.querySelector(".btn-nudge-left");
+    const btnNudgeRight = row.querySelector(".btn-nudge-right");
+    const nudgeValBadge = row.querySelector(".nudge-val-badge");
+
+    if (btnNudgeLeft) {
+      btnNudgeLeft.addEventListener("click", (e) => {
+        const step = e.shiftKey ? 0.001 : (e.ctrlKey ? 0.05 : 0.01);
+        this.setTrackOffset(track, (track.offsetSec || 0) - step, true);
+      });
+    }
+    if (btnNudgeRight) {
+      btnNudgeRight.addEventListener("click", (e) => {
+        const step = e.shiftKey ? 0.001 : (e.ctrlKey ? 0.05 : 0.01);
+        this.setTrackOffset(track, (track.offsetSec || 0) + step, true);
+      });
+    }
+    if (nudgeValBadge) {
+      nudgeValBadge.addEventListener("dblclick", () => {
+        this.setTrackOffset(track, 0, true);
+        this.showToast(`⟲ [${meta.displayName}] 平移已歸零`);
+      });
+    }
 
     this.renderTrackRegions(track);
 
@@ -1384,6 +1473,64 @@ class StemForgeDawApp {
     }
   }
 
+  showDragBadge(clientX, clientY, offsetSec) {
+    const badge = document.getElementById("dragOffsetBadge");
+    if (!badge) return;
+    badge.style.display = "block";
+    badge.style.left = `${clientX + 14}px`;
+    badge.style.top = `${clientY - 30}px`;
+    const ms = offsetSec * 1000;
+    const sign = ms > 0.001 ? "+" : "";
+    badge.textContent = `↔️ 平移: ${sign}${ms.toFixed(1)} ms`;
+  }
+
+  hideDragBadge() {
+    const badge = document.getElementById("dragOffsetBadge");
+    if (badge) badge.style.display = "none";
+  }
+
+  updateTrackOffsetDisplay(track) {
+    if (!track.rowEl) return;
+    const badge = track.rowEl.querySelector(".nudge-val-badge");
+    if (!badge) return;
+    const ms = (track.offsetSec || 0) * 1000;
+    const sign = ms > 0.001 ? "+" : "";
+    badge.textContent = Math.abs(ms) < 0.1 ? "0ms" : `${sign}${Math.round(ms)}ms`;
+    badge.title = `目前平移量: ${sign}${ms.toFixed(1)} ms (雙擊歸零)`;
+  }
+
+  setTrackOffset(track, offsetSec, syncBackend = true) {
+    track.offsetSec = Math.round(offsetSec * 1000) / 1000;
+    this.updateTrackOffsetDisplay(track);
+    this.drawWaveform(track);
+    this.renderTrackRegions(track);
+
+    if (this.isPlaying) {
+      const curPos = this.getCurrentTimeSec();
+      this.stopPlayback();
+      this.seekTo(curPos);
+      this.startPlayback();
+    }
+
+    if (syncBackend) {
+      this.persistTrackOffset(track);
+    }
+  }
+
+  async persistTrackOffset(track) {
+    const jobId = this.currentJob ? this.currentJob.jobId : (track.meta.jobId || "");
+    if (!jobId) return;
+    try {
+      await fetch(`/api/jobs/${jobId}/tracks/${encodeURIComponent(track.nodeId)}/offset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offsetSec: track.offsetSec || 0 })
+      });
+    } catch (err) {
+      console.warn("Persist track offset error:", err);
+    }
+  }
+
   drawWaveform(track) {
     const canvas = track.canvas;
     if (!canvas || !canvas.parentElement) return;
@@ -1411,12 +1558,14 @@ class StemForgeDawApp {
     if (!buf || buf.length === 0) return;
 
     const totalDur = this.durationSec > 0 ? this.durationSec : buf.duration;
-    const trackWidthRatio = Math.min(1.0, buf.duration / totalDur);
-    const activeW = Math.max(10, Math.floor(w * trackWidthRatio));
+    const offsetSec = track.offsetSec || 0.0;
+    const startX = Math.round((offsetSec / totalDur) * w);
+    const trackWidth = Math.round((buf.duration / totalDur) * w);
+    if (trackWidth <= 0) return;
 
     const ch0 = buf.getChannelData(0);
     const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : ch0;
-    const numBuckets = Math.min(activeW, 450);
+    const numBuckets = Math.max(10, Math.min(trackWidth, 450));
     const step = Math.max(1, Math.floor(ch0.length / numBuckets));
 
     const bucketPeaks = new Float32Array(numBuckets);
@@ -1425,7 +1574,6 @@ class StemForgeDawApp {
     for (let b = 0; b < numBuckets; b++) {
       const start = b * step;
       const end = Math.min(ch0.length, start + step);
-      // 抽樣加速長音檔繪製
       const stride = Math.max(1, Math.floor((end - start) / 64));
       let localMax = 0;
       for (let i = start; i < end; i += stride) {
@@ -1437,12 +1585,14 @@ class StemForgeDawApp {
     }
 
     ctx.fillStyle = track.meta.colorHex;
-    const barWidth = activeW / numBuckets;
+    const barWidth = trackWidth / numBuckets;
 
     for (let b = 0; b < numBuckets; b++) {
+      const bx = startX + b * barWidth;
+      if (bx + barWidth < 0 || bx > w) continue;
       const normAmp = Math.min(1.0, bucketPeaks[b] / globalMax);
       const barH = Math.max(2, normAmp * (h * 0.84));
-      ctx.fillRect(b * barWidth, midY - barH / 2, Math.max(1.2, barWidth - 0.6), barH);
+      ctx.fillRect(bx, midY - barH / 2, Math.max(1.2, barWidth - 0.6), barH);
     }
   }
 
@@ -1673,12 +1823,27 @@ class StemForgeDawApp {
     const effectiveAudioStart = (this.leadTrimSec || 0) + offset;
 
     for (const t of this.tracks) {
+      if (!t.audioBuffer) continue;
       const src = this.audioCtx.createBufferSource();
       src.buffer = t.audioBuffer;
       src.connect(t.panNode);
-      src.start(syncStartAt, effectiveAudioStart);
-      this.activeSources.push(src);
-      this.scheduleTrackRegionGains(t, syncStartAt, effectiveAudioStart);
+
+      const trackOffset = t.offsetSec || 0.0;
+      const trackPlayhead = effectiveAudioStart;
+
+      if (trackPlayhead >= trackOffset) {
+        const bufOffset = trackPlayhead - trackOffset;
+        if (bufOffset < t.audioBuffer.duration) {
+          src.start(syncStartAt, bufOffset);
+          this.activeSources.push(src);
+          this.scheduleTrackRegionGains(t, syncStartAt, bufOffset);
+        }
+      } else {
+        const delaySec = trackOffset - trackPlayhead;
+        src.start(syncStartAt + delaySec, 0);
+        this.activeSources.push(src);
+        this.scheduleTrackRegionGains(t, syncStartAt + delaySec, 0);
+      }
     }
 
     // 原曲母帶已作為 Track 0 納入 WebAudio 混音軌陣列 (由上方迴圈同步播放)
@@ -2368,11 +2533,13 @@ class StemForgeDawApp {
   // ============================================================
   setToolMode(mode) {
     this.currentTool = mode;
-    document.body.classList.remove("tool-mode-scissors", "tool-mode-mute");
+    document.body.classList.remove("tool-mode-scissors", "tool-mode-mute", "tool-mode-drag");
     if (mode === "scissors") document.body.classList.add("tool-mode-scissors");
     if (mode === "mute") document.body.classList.add("tool-mode-mute");
+    if (mode === "drag") document.body.classList.add("tool-mode-drag");
 
     if (this.btnToolPointer) this.btnToolPointer.classList.toggle("active", mode === "pointer");
+    if (this.btnToolDrag) this.btnToolDrag.classList.toggle("active", mode === "drag");
     if (this.btnToolScissors) this.btnToolScissors.classList.toggle("active", mode === "scissors");
     if (this.btnToolMute) this.btnToolMute.classList.toggle("active", mode === "mute");
   }
@@ -2534,9 +2701,10 @@ class StemForgeDawApp {
     if (!track.regionsOverlayEl) return;
     track.regionsOverlayEl.innerHTML = "";
     const totalDur = this.durationSec > 0 ? this.durationSec : (track.audioBuffer ? track.audioBuffer.duration : 1.0);
+    const offsetSec = track.offsetSec || 0.0;
 
     for (const r of track.regions) {
-      const leftPct = (r.startSec / totalDur) * 100;
+      const leftPct = ((r.startSec + offsetSec) / totalDur) * 100;
       const widthPct = ((r.endSec - r.startSec) / totalDur) * 100;
 
       const el = document.createElement("div");
@@ -2595,6 +2763,9 @@ class StemForgeDawApp {
         muted: false
       }];
       t.nextRegionId = 2;
+      t.offsetSec = 0.0;
+      this.updateTrackOffsetDisplay(t);
+      this.drawWaveform(t);
       this.renderTrackRegions(t);
       if (this.isPlaying) {
         this.scheduleTrackRegionGains(t, this.audioCtx.currentTime, this.getCurrentTimeSec());
@@ -3785,7 +3956,8 @@ class StemForgeDawApp {
         regionsOverlayEl: null,
         scissorLineEl: null,
         scissorLabelEl: null,
-        isCustomTrack: true
+        isCustomTrack: true,
+        offsetSec: stem.offsetSeconds || 0.0
       };
 
       this.tracks.push(trackObj);
