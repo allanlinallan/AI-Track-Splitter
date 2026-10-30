@@ -1168,6 +1168,12 @@ class StemForgeDawApp {
       track.panNode.pan.value = track.pan;
     });
 
+    panSlider.addEventListener("dblclick", () => {
+      track.pan = 0.0;
+      panSlider.value = 0.0;
+      if (track.panNode && track.panNode.pan) track.panNode.pan.value = 0.0;
+    });
+
     // ↔️ 滑鼠按住波形拖曳對齊 (Drag to Align / Slip Edit)
     let isMouseDown = false;
     let startClientX = 0;
