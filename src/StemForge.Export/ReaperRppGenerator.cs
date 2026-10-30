@@ -16,15 +16,17 @@ public static class ReaperRppGenerator
         string projectTitle,
         int sampleRate,
         double durationSeconds,
-        IReadOnlyList<StemTrackResult> stems)
+        IReadOnlyList<StemTrackResult> stems,
+        double bpm = 120.0)
     {
         var sb = new StringBuilder();
         var inv = CultureInfo.InvariantCulture;
         string rppDir = Path.GetDirectoryName(outputRppPath) ?? "";
+        double validBpm = (bpm > 20 && bpm < 400) ? bpm : 120.0;
 
         sb.AppendLine("<REAPER_PROJECT 0.1 \"7.0\" 1729300000");
         sb.AppendLine($"  SAMPLERATE {sampleRate} 0 0");
-        sb.AppendLine("  TEMPO 120 4 4");
+        sb.AppendLine($"  TEMPO {validBpm.ToString("F2", inv)} 4 4");
         sb.AppendLine($"  <NOTES 0 2");
         sb.AppendLine($"    |StemForge AI Fine-Grained Separation Project: {projectTitle}");
         sb.AppendLine($"    |Stems Count: {stems.Count} | Sample Rate: {sampleRate} Hz");
@@ -62,7 +64,7 @@ public static class ReaperRppGenerator
                 sb.AppendLine("  <TRACK");
                 sb.AppendLine($"    NAME \"{stem.DisplayName}\"");
                 sb.AppendLine($"    PEAKCOL {trackColor}");
-                sb.AppendLine("    VOLPAN 1 0 -1 -1 1");
+                sb.AppendLine($"    VOLPAN 1 0 -1 -1 1");
                 sb.AppendLine("    MUTESOLO 0 0 0");
                 sb.AppendLine(isLastInFolder ? "    ISBUS 2 -1" : "    ISBUS 0 0");
                 sb.AppendLine("    <ITEM");

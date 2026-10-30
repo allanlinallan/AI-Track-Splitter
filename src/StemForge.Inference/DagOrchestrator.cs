@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using StemForge.Core.Cache;
 using StemForge.Core.Contracts;
@@ -1278,7 +1278,8 @@ public sealed class DagOrchestrator
                 originalFileName,
                 originalMix.SampleRate,
                 originalMix.DurationSeconds,
-                stemResults);
+                stemResults,
+                jobResult.DetectedBpm ?? 120.0);
             jobResult.ReaperRppUrl = $"/projects/{jobId}/{Uri.EscapeDataString(rppFileName)}";
         }
 
@@ -1414,7 +1415,8 @@ public sealed class DagOrchestrator
                     cleanName,
                     newJob.SampleRate > 0 ? newJob.SampleRate : 48000,
                     newJob.DurationSeconds,
-                    newJob.Stems);
+                    newJob.Stems,
+                    newJob.DetectedBpm ?? 120.0);
                 newJob.ReaperRppUrl = $"/projects/{newJobId}/{Uri.EscapeDataString(rppFileName)}";
             }
             catch { }
@@ -1451,7 +1453,8 @@ public sealed class DagOrchestrator
                     job.OriginalFileName,
                     job.SampleRate > 0 ? job.SampleRate : 48000,
                     job.DurationSeconds,
-                    job.Stems);
+                    job.Stems,
+                    job.DetectedBpm ?? 120.0);
                 job.ReaperRppUrl = $"/projects/{jobId}/{Uri.EscapeDataString(rppFileName)}";
             }
             catch { }
@@ -1574,7 +1577,8 @@ public sealed class DagOrchestrator
                 job.OriginalFileName,
                 job.SampleRate > 0 ? job.SampleRate : 48000,
                 job.DurationSeconds > 0 ? job.DurationSeconds : audio.DurationSeconds,
-                job.Stems);
+                job.Stems,
+                job.DetectedBpm ?? 120.0);
         }
         catch { }
 
@@ -1632,7 +1636,8 @@ public sealed class DagOrchestrator
                 job.OriginalFileName,
                 job.SampleRate > 0 ? job.SampleRate : 48000,
                 job.DurationSeconds,
-                job.Stems);
+                job.Stems,
+                job.DetectedBpm ?? 120.0);
         }
         catch { }
 
@@ -1733,7 +1738,8 @@ public sealed class DagOrchestrator
                 job.OriginalFileName,
                 job.SampleRate > 0 ? job.SampleRate : 48000,
                 job.DurationSeconds,
-                job.Stems);
+                job.Stems,
+                job.DetectedBpm ?? 120.0);
         }
         catch { }
 
@@ -1792,7 +1798,8 @@ public sealed class DagOrchestrator
                 job.OriginalFileName,
                 job.SampleRate > 0 ? job.SampleRate : 48000,
                 job.DurationSeconds,
-                job.Stems);
+                job.Stems,
+                job.DetectedBpm ?? 120.0);
         }
         catch { }
 
@@ -1838,7 +1845,8 @@ public sealed class DagOrchestrator
                 job.OriginalFileName,
                 job.SampleRate > 0 ? job.SampleRate : 48000,
                 job.DurationSeconds,
-                job.Stems);
+                job.Stems,
+                job.DetectedBpm ?? 120.0);
         }
         catch { }
 

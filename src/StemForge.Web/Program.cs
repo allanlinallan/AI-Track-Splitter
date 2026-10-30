@@ -1,4 +1,6 @@
-using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
@@ -852,6 +854,52 @@ app.MapPost("/api/jobs/{jobId}/override-key", async (
         return Results.Ok(new { key, displayName });
     }
     return Results.BadRequest(new { error = "無效的請求資料" });
+});
+
+// 7.56 手動校正 BPM API (點擊原速徽章自訂修改，同步覆寫 detected_bpm.json 與更新 Reaper 專案)
+app.MapPost("/api/jobs/{jobId}/override-bpm", async (
+    string jobId,
+    HttpRequest httpReq,
+    DagOrchestrator orchestrator,
+    CancellationToken ct) =>
+{
+    var job = orchestrator.GetJobResult(jobId);
+    if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
+
+    using var reader = new StreamReader(httpReq.Body);
+    var body = await reader.ReadToEndAsync(ct);
+    if (!string.IsNullOrWhiteSpace(body))
+    {
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.TryGetProperty("bpm", out var bProp) && bProp.TryGetDouble(out double newBpm) && newBpm > 20 && newBpm < 400)
+        {
+            job.DetectedBpm = Math.Round(newBpm, 1);
+
+            string jobDir = Path.Combine(projectsDir, jobId);
+            string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
+            await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm = job.DetectedBpm.Value }), ct);
+
+            // 若已有 .rpp 檔案，同步更新 TEMPO 行
+            try
+            {
+                var rppFiles = Directory.GetFiles(jobDir, "*.rpp");
+                foreach (var rppPath in rppFiles)
+                {
+                    string rppText = await File.ReadAllTextAsync(rppPath, ct);
+                    string updatedRpp = System.Text.RegularExpressions.Regex.Replace(
+                        rppText,
+                        @"TEMPO\s+[\d\.]+\s+4\s+4",
+                        $"TEMPO {job.DetectedBpm.Value.ToString("F2", CultureInfo.InvariantCulture)} 4 4"
+                    );
+                    await File.WriteAllTextAsync(rppPath, updatedRpp, new UTF8Encoding(false), ct);
+                }
+            }
+            catch { /* non-critical */ }
+
+            return Results.Ok(new { bpm = job.DetectedBpm.Value });
+        }
+    }
+    return Results.BadRequest(new { error = "無效的 BPM 數值 (需介於 20 ~ 400 之間)" });
 });
 
 // 7.6 PyTorch GPU 神經變調 API (升降半音 -6 ~ +6)

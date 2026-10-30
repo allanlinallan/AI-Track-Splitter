@@ -256,7 +256,7 @@
         <!-- AI 時間軸拍速控制組 (原速偵測 + 拍速拉桿 + 一鍵恢復) -->
         <div class="tempo-panel" id="tempoPanel">
           <div class="tempo-info">
-            <span class="tempo-badge-orig" id="detectedBpmBadge" title="AI 辨識歌曲原始拍速">原速: -- BPM</span>
+            <span class="tempo-badge-orig" id="detectedBpmBadge" title="點擊修改歌曲原速 BPM (將同步更新時間軸與 Reaper 節拍網格)" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none; border: 1px solid rgba(16, 185, 129, 0.6); background: rgba(16, 185, 129, 0.15); padding: 3px 8px; border-radius: 4px;">原速: -- BPM <span style="font-size: 10px; color: #34d399;">[點擊修改]</span></span>
             <span class="tempo-arrow">➔</span>
             <span class="tempo-badge-target" id="targetBpmBadge" title="當前目標拍速">目標: 原速</span>
           </div>
@@ -491,7 +491,7 @@
     </div>
   </div>
 
-  <script src="/js/webaudio-daw.js?v=45"></script>
+  <script src="/js/webaudio-daw.js?v=46"></script>
 
   <div id="dragOffsetBadge" class="drag-offset-badge">↔️ +0.0 ms</div>
 </body>

@@ -345,6 +345,9 @@ class StemForgeDawApp {
     if (this.keyOverrideSelect) {
       this.keyOverrideSelect.addEventListener("change", (e) => this.handleManualKeyOverride(e.target.value));
     }
+    if (this.detectedBpmBadge) {
+      this.detectedBpmBadge.addEventListener("click", () => this.handleManualBpmOverride());
+    }
 
     if (this.tempoSlider) {
       this.tempoSlider.addEventListener("input", (e) => this.updateTempoUiOnly(parseInt(e.target.value, 10)));
@@ -851,7 +854,7 @@ class StemForgeDawApp {
     this.currentBpm = bpmVal;
 
     if (this.detectedBpmBadge) {
-      this.detectedBpmBadge.textContent = `原速: ${bpmVal} BPM`;
+      this.detectedBpmBadge.innerHTML = `原速: ${bpmVal} BPM <span style="font-size: 10px; color: #34d399;">[點擊修改]</span>`;
     }
     if (this.targetBpmBadge) {
       this.targetBpmBadge.textContent = "目標: 原速";
@@ -2527,6 +2530,53 @@ class StemForgeDawApp {
       console.warn("Key override sync failed:", err);
     }
   }
+
+  async handleManualBpmOverride() {
+    if (!this.currentJob) return;
+    const curVal = this.originalBpm || (this.currentJob.detectedBpm ? Math.round(this.currentJob.detectedBpm) : 120);
+    const input = prompt(`請輸入此首歌曲的正確原始 BPM (當前為 ${curVal})：`, curVal);
+    if (!input) return;
+    const newBpm = parseFloat(input.trim());
+    if (isNaN(newBpm) || newBpm < 30 || newBpm > 350) {
+      alert("請輸入有效的 BPM 數值 (介於 30 ~ 350 之間)");
+      return;
+    }
+
+    const roundedBpm = Math.round(newBpm * 10) / 10;
+    this.originalBpm = roundedBpm;
+    this.currentBpm = roundedBpm;
+    this.currentJob.detectedBpm = roundedBpm;
+
+    if (this.detectedBpmBadge) {
+      this.detectedBpmBadge.innerHTML = `原速: ${roundedBpm} BPM <span style="font-size: 10px; color: #34d399;">[點擊修改]</span>`;
+    }
+    if (this.targetBpmBadge) {
+      this.targetBpmBadge.textContent = "目標: 原速";
+    }
+    if (this.tempoSlider) {
+      const minBpm = Math.max(40, Math.round(roundedBpm * 0.6));
+      const maxBpm = Math.min(260, Math.round(roundedBpm * 1.5));
+      this.tempoSlider.min = minBpm;
+      this.tempoSlider.max = maxBpm;
+      this.tempoSlider.value = roundedBpm;
+    }
+    if (this.tempoValueLabel) {
+      this.tempoValueLabel.textContent = `${roundedBpm} BPM`;
+    }
+
+    this.showToast(`⚡ 已手動校正歌曲拍速為：${roundedBpm} BPM，已同步更新專案與 Reaper 節拍網格`);
+
+    try {
+      await fetch(`/api/jobs/${this.currentJob.jobId}/override-bpm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bpm: roundedBpm })
+      });
+    } catch (err) {
+      console.warn("BPM override sync failed:", err);
+    }
+  }
+
 
   updatePitchUiOnly(val) {
     if (this.pitchValueLabel) {

@@ -551,17 +551,55 @@ def pitch_shift_stems_gpu(stems_dir: str, output_dir: str, semitones: int):
 
 def detect_audio_bpm(audio_path: str):
     """
-    使用 librosa 的 beat_track 特徵萃取快速計算原始拍速 (BPM)
+    高精度音訊 BPM 偵測演算法：
+    1. 載入最多 240 秒全曲代表性音訊 (徹底避免僅採樣前 45 秒弱起/散板/慢速前奏之偏差)
+    2. 結合動態規劃節拍追蹤 (beat_track) 與節拍間隔中位數 (IBI)
+    3. 修正八分音符/半速偏倚 (將流行音樂四分音符基準速度鎖定在 70 - 165 BPM)
+    4. 消除 75~88 BPM 次諧波偏倚 (例如童年 83.4 實為 123~125 BPM 的 2/3 次諧波)，透過全曲 Tempogram 能量峰值校正
     """
     import librosa
+    import numpy as np
     try:
-        y, sr = librosa.load(audio_path, sr=22050, duration=45.0)
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        raw_bpm = float(tempo[0]) if hasattr(tempo, "__len__") else float(tempo)
+        y, sr = librosa.load(audio_path, sr=22050, duration=240.0)
+        if len(y) < sr * 5:
+            return {"bpm": 120.0, "bpmInt": 120}
+
+        tempo_bt, beats = librosa.beat.beat_track(y=y, sr=sr)
+        raw_bpm = float(tempo_bt[0]) if hasattr(tempo_bt, "__len__") else float(tempo_bt)
+
+        if len(beats) >= 8:
+            beat_times = librosa.frames_to_time(beats, sr=sr)
+            ibi = np.diff(beat_times)
+            valid_ibi = ibi[(ibi >= 0.25) & (ibi <= 1.4)]
+            if len(valid_ibi) >= 4:
+                ibi_bpm = 60.0 / np.median(valid_ibi)
+                if abs(raw_bpm - ibi_bpm) < 5.0 or raw_bpm < 70 or raw_bpm > 180:
+                    raw_bpm = ibi_bpm
+
         if raw_bpm < 65.0:
             raw_bpm *= 2.0
-        elif raw_bpm > 200.0:
+        elif raw_bpm > 165.0:
             raw_bpm /= 2.0
+
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        tempogram = librosa.feature.tempogram(onset_envelope=onset_env, sr=sr)
+        ac_global = np.mean(tempogram, axis=1)
+        freqs = librosa.tempo_frequencies(tempogram.shape[0], sr=sr)
+
+        pop_mask = (freqs >= 105) & (freqs <= 145)
+        if np.any(pop_mask) and (75 <= raw_bpm <= 88):
+            pop_freqs = freqs[pop_mask]
+            pop_ac = ac_global[pop_mask]
+            best_pop_idx = np.argmax(pop_ac)
+            best_pop_bpm = pop_freqs[best_pop_idx]
+            best_pop_strength = pop_ac[best_pop_idx]
+
+            cur_mask = (freqs >= raw_bpm - 4) & (freqs <= raw_bpm + 4)
+            cur_strength = np.max(ac_global[cur_mask]) if np.any(cur_mask) else 0
+
+            if best_pop_strength >= cur_strength * 0.95:
+                raw_bpm = best_pop_bpm
+
         rounded_bpm = round(raw_bpm, 1)
         return {
             "bpm": rounded_bpm,
@@ -572,7 +610,6 @@ def detect_audio_bpm(audio_path: str):
             "bpm": 120.0,
             "bpmInt": 120
         }
-
 
 def time_stretch_stems(stems_dir: str, output_dir: str, tempo_ratio: float):
     """
