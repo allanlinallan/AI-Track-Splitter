@@ -153,6 +153,6 @@ public sealed record HistoryProjectSummary(
     DateTime CreatedAt
 );
 
-public sealed record PitchShiftRequest(int? Semitones);
+public sealed record PitchShiftRequest(int? Semitones, double? TargetBpm = null, double? OriginalBpm = null);
 
-public sealed record TimeStretchRequest(double? TempoRatio, double? TargetBpm);
+public sealed record TimeStretchRequest(double? TempoRatio, double? TargetBpm, double? OriginalBpm = null, int? PitchShiftSemitones = null);
