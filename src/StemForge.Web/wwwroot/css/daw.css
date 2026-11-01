@@ -593,9 +593,9 @@ body {
 }
 
 .progress-banner {
-  background: #101726;
+  background: #0d1321;
   border-bottom: 1px solid var(--border-col);
-  padding: 9px 16px;
+  padding: 4px 14px 2px 14px;
   flex-shrink: 0;
 }
 
@@ -603,27 +603,58 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 5px;
+  margin-bottom: 2px;
+}
+
+.progress-info-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stage-tag {
   background: #1e3a8a;
   color: #93c5fd;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 3px;
-  margin-right: 8px;
+  line-height: 1.2;
+}
+
+#progressTitleText {
+  font-size: 11px;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.progress-sub-divider {
+  color: #334155;
+  font-size: 10px;
+  user-select: none;
+}
+
+.progress-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pct-num {
   font-family: Consolas, monospace;
   font-weight: 700;
+  font-size: 11px;
   color: #38bdf8;
 }
 
 .progress-track {
-  height: 6px;
+  height: 3px;
   background: #1e293b;
   border-radius: 99px;
   overflow: hidden;
@@ -635,40 +666,59 @@ body {
   transition: width 0.2s ease;
 }
 
-.progress-sub {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-/* Transport Bar */
+/* Transport Bar — 緊湊專業 3 行 DAW 工具列 */
 .transport-bar {
-  background: #131c2e;
+  background: #111827;
   border-bottom: 1px solid var(--border-col);
-  padding: 8px 16px;
+  padding: 5px 12px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 5px;
   flex-shrink: 0;
 }
 
-.transport-controls {
+.transport-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.transport-group-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.toolbar-sep {
+  color: #334155;
+  margin: 0 3px;
+  font-size: 11px;
+  user-select: none;
 }
 
 .t-btn {
   background: #1e293b;
   border: 1px solid #334155;
   color: #f1f5f9;
-  padding: 6px 11px;
-  border-radius: 5px;
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.t-btn:hover:not(:disabled) {
+  background: #334155;
+  border-color: #475569;
 }
 
 .t-btn:disabled {
@@ -691,23 +741,24 @@ body {
 .metronome-control-box {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid #334155;
-  border-radius: 6px;
-  padding: 4px 10px;
-  margin-left: 4px;
+  border-radius: 4px;
+  padding: 1px 7px;
+  height: 25px;
 }
 
 .metro-toggle-label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
+  gap: 4px;
+  font-size: 10.5px;
   font-weight: 600;
   color: #cbd5e1;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
   transition: color 0.15s ease;
 }
 
@@ -718,8 +769,8 @@ body {
 .metro-toggle-label input[type="checkbox"] {
   accent-color: #38bdf8;
   cursor: pointer;
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   margin: 0;
 }
 
@@ -727,29 +778,22 @@ body {
   background: #0f172a;
   border: 1px solid #0284c7;
   color: #38bdf8;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 4px;
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
-}
-
-.metro-select:hover, .metro-select:focus {
-  background: #1e293b;
-  border-color: #38bdf8;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
 }
 
 .metro-beat-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 8.5px;
   font-weight: 800;
   font-family: Consolas, monospace;
   color: #475569;
@@ -762,98 +806,125 @@ body {
   background: #f59e0b;
   color: #000;
   border-color: #fbbf24;
-  box-shadow: 0 0 10px #f59e0b;
-  transform: scale(1.18);
+  box-shadow: 0 0 8px #f59e0b;
+  transform: scale(1.15);
 }
 
 .metro-beat-indicator.beat {
   background: #06b6d4;
   color: #000;
   border-color: #22d3ee;
-  box-shadow: 0 0 8px #06b6d4;
+  box-shadow: 0 0 6px #06b6d4;
   transform: scale(1.08);
 }
 
 .timecode-box {
   background: #070a12;
   border: 1px solid #1e293b;
-  padding: 5px 12px;
-  border-radius: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
   font-family: Consolas, "Courier New", monospace;
-  font-size: 14px;
+  font-size: 13px;
   color: #38bdf8;
   font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .master-fader-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  height: 25px;
+}
+
+.master-fader-box input[type="range"] {
+  width: 80px;
+  height: 4px;
+  accent-color: #38bdf8;
+  cursor: pointer;
 }
 
 .null-badge {
   background: rgba(16, 185, 129, 0.14);
   border: 1px solid rgba(16, 185, 129, 0.4);
   color: #34d399;
-  padding: 3px 8px;
-  border-radius: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
   font-family: Consolas, monospace;
-  font-size: 11.5px;
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 
-/* Pitch Shift Panel */
+/* Row 2: 剪輯工具箱 + 變調 + 變速（單行平鋪） */
+.transport-row-tools {
+  justify-content: flex-start;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Pitch Shift Panel (單行緊湊) */
 .pitch-shift-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 6px;
-  padding: 4px 10px;
+  border-radius: 4px;
+  padding: 2px 7px;
+  height: 27px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .pitch-key-info {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 4px;
+  font-size: 10.5px;
 }
 
 .pitch-badge-orig {
   background: rgba(59, 130, 246, 0.18);
   border: 1px solid rgba(59, 130, 246, 0.5);
   color: #60a5fa;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .pitch-arrow {
   color: #64748b;
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .pitch-badge-target {
   background: rgba(168, 85, 247, 0.18);
   border: 1px solid rgba(168, 85, 247, 0.5);
   color: #c084fc;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .pitch-controls-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
 
 .pitch-controls-row input[type="range"] {
-  width: 90px;
-  height: 5px;
+  width: 60px;
+  height: 4px;
   accent-color: #a855f7;
   cursor: pointer;
 }
@@ -862,11 +933,12 @@ body {
   background: #1e293b;
   border: 1px solid #334155;
   color: #cbd5e1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  line-height: 1.1;
 }
 
 .pitch-step-btn:hover {
@@ -876,10 +948,10 @@ body {
 
 .pitch-value-label {
   font-family: Consolas, monospace;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #f1f5f9;
-  min-width: 48px;
+  min-width: 40px;
   text-align: center;
 }
 
@@ -887,27 +959,29 @@ body {
   background: linear-gradient(135deg, #9333ea, #7c3aed);
   border: 1px solid #a855f7;
   color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s;
 }
 
 .btn-pitch-apply:hover:not(:disabled) {
   background: linear-gradient(135deg, #a855f7, #9333ea);
-  box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.5);
 }
 
 .btn-pitch-reset {
   background: #1e293b;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10.5px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 9.5px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s;
 }
 
@@ -917,58 +991,62 @@ body {
   color: white;
 }
 
-/* Tempo / BPM Shift Panel */
+/* Tempo / BPM Shift Panel (單行緊湊) */
 .tempo-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 6px;
-  padding: 4px 10px;
+  border-radius: 4px;
+  padding: 2px 7px;
+  height: 27px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tempo-info {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 4px;
+  font-size: 10.5px;
 }
 
 .tempo-badge-orig {
   background: rgba(16, 185, 129, 0.18);
   border: 1px solid rgba(16, 185, 129, 0.5);
   color: #34d399;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .tempo-arrow {
   color: #64748b;
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .tempo-badge-target {
   background: rgba(6, 182, 212, 0.18);
   border: 1px solid rgba(6, 182, 212, 0.5);
   color: #22d3ee;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .tempo-controls-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
 
 .tempo-controls-row input[type="range"] {
-  width: 95px;
-  height: 5px;
+  width: 65px;
+  height: 4px;
   accent-color: #06b6d4;
   cursor: pointer;
 }
@@ -977,11 +1055,12 @@ body {
   background: #1e293b;
   border: 1px solid #334155;
   color: #cbd5e1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  line-height: 1.1;
 }
 
 .tempo-step-btn:hover {
@@ -991,10 +1070,10 @@ body {
 
 .tempo-value-label {
   font-family: Consolas, monospace;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #f1f5f9;
-  min-width: 54px;
+  min-width: 44px;
   text-align: center;
 }
 
@@ -1002,27 +1081,29 @@ body {
   background: linear-gradient(135deg, #059669, #0d9488);
   border: 1px solid #10b981;
   color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s;
 }
 
 .btn-tempo-apply:hover:not(:disabled) {
   background: linear-gradient(135deg, #10b981, #059669);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
 }
 
 .btn-tempo-reset {
   background: #1e293b;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10.5px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 9.5px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.15s;
 }
 
@@ -1030,6 +1111,34 @@ body {
   background: #0ea5e9;
   border-color: #0ea5e9;
   color: white;
+}
+
+/* Row 3: 工程管理與匯出動作列 */
+.transport-row-export {
+  justify-content: space-between;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.export-group-left, .export-group-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.export-actions .btn {
+  padding: 3px 7px;
+  font-size: 10.5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  line-height: 1;
 }
 
 .timeline-scrubber {
@@ -1588,34 +1697,39 @@ body {
    ✂️ 編曲剪輯工具箱 (Edit & Arrangement Tools)
 ============================================================ */
 .edit-tools-panel {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 6px;
-  padding: 4px 8px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  height: 27px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tools-label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #64748b;
-  margin-right: 2px;
+  margin-right: 1px;
 }
 
 .edit-tool-btn {
   background: #1e293b;
   border: 1px solid #334155;
   color: #94a3b8;
-  padding: 4px 9px;
-  border-radius: 4px;
-  font-size: 11.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10.5px;
   font-weight: 600;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  height: 21px;
+  line-height: 1;
   transition: all 0.15s ease;
 }
 
@@ -1628,19 +1742,19 @@ body {
   background: linear-gradient(135deg, #0284c7, #0369a1);
   border-color: #38bdf8;
   color: #ffffff;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
 }
 
 .edit-tool-btn#btnToolScissors.active {
   background: linear-gradient(135deg, #d97706, #b45309);
   border-color: #fbbf24;
-  box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.4);
 }
 
 .edit-tool-btn#btnToolMute.active {
   background: linear-gradient(135deg, #dc2626, #b91c1c);
   border-color: #f87171;
-  box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
 }
 
 .btn-tool-trim {
