@@ -119,8 +119,47 @@ public sealed class DagOrchestrator
         if (!Directory.Exists(jobDir)) return null;
 
         string stemsDir = Path.Combine(jobDir, "stems");
+        string rawStemsDir = Path.Combine(jobDir, "raw_stems");
         string origWav = Path.Combine(jobDir, "00_Original_Mix.wav");
         if (!File.Exists(origWav) || !Directory.Exists(stemsDir)) return null;
+
+        // 【架構收斂】自動將歷史 pitch_* 或 tempo_* 產生的最新音軌遷移至唯一的 stems/ 最新狀態夾，並清理冗餘資料夾
+        try
+        {
+            DirectoryInfo? latestTransientDir = null;
+            DateTime latestTransientTime = DateTime.MinValue;
+            var oldDirs = Directory.GetDirectories(jobDir, "pitch_*").Concat(Directory.GetDirectories(jobDir, "tempo_*")).ToList();
+            foreach (var d in oldDirs)
+            {
+                var di = new DirectoryInfo(d);
+                if (di.LastWriteTimeUtc > latestTransientTime && Directory.GetFiles(d, "*.wav").Length > 0)
+                {
+                    latestTransientTime = di.LastWriteTimeUtc;
+                    latestTransientDir = di;
+                }
+            }
+            if (latestTransientDir != null)
+            {
+                foreach (var wav in Directory.GetFiles(latestTransientDir.FullName, "*.wav"))
+                {
+                    File.Copy(wav, Path.Combine(stemsDir, Path.GetFileName(wav)), true);
+                }
+                foreach (var d in oldDirs)
+                {
+                    try { Directory.Delete(d, true); } catch { }
+                }
+            }
+            // 確保 raw_stems 存在 (原始分析基準夾)
+            if (!Directory.Exists(rawStemsDir))
+            {
+                Directory.CreateDirectory(rawStemsDir);
+                foreach (var wav in Directory.GetFiles(stemsDir, "*.wav"))
+                {
+                    File.Copy(wav, Path.Combine(rawStemsDir, Path.GetFileName(wav)), true);
+                }
+            }
+        }
+        catch { }
 
         var (origDuration, origSampleRate) = WavFileIo.GetAudioFileInfo(origWav);
 
@@ -828,34 +867,41 @@ public sealed class DagOrchestrator
 
         if (effectivePitch != 0)
         {
-            string pitchOutDir = Path.Combine(jobDir, $"pitch_{effectivePitch}");
-            Directory.CreateDirectory(pitchOutDir);
-
             string activeStemsDir = Path.Combine(jobDir, "stems");
-            await _cliRunner.PitchShiftStemsAsync(
-                activeStemsDir,
-                pitchOutDir,
-                effectivePitch,
-                async (pct, msg) =>
-                {
-                    if (onProgress != null)
+            string tempPitchDir = Path.Combine(jobDir, ".temp_mode_pitch");
+            Directory.CreateDirectory(tempPitchDir);
+            try
+            {
+                await _cliRunner.PitchShiftStemsAsync(
+                    activeStemsDir,
+                    tempPitchDir,
+                    effectivePitch,
+                    async (pct, msg) =>
                     {
-                        await onProgress(new ProgressUpdateEvent(
-                            jobId, "PITCH_SHIFT", $"切換模式保持變調 ({effectivePitch:+d} 半音)", pct, pct, msg
-                        ));
-                    }
-                },
-                ct);
+                        if (onProgress != null)
+                        {
+                            await onProgress(new ProgressUpdateEvent(
+                                jobId, "PITCH_SHIFT", $"切換模式保持變調 ({effectivePitch:+d} 半音)", pct, pct, msg
+                            ));
+                        }
+                    },
+                    ct);
+
+                foreach (var wav in Directory.GetFiles(tempPitchDir, "*.wav"))
+                {
+                    File.Copy(wav, Path.Combine(activeStemsDir, Path.GetFileName(wav)), true);
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(tempPitchDir, true); } catch { }
+            }
 
             foreach (var stem in updated.Stems)
             {
                 string fn = Path.GetFileName(stem.FilePath);
-                string shiftedFile = Path.Combine(pitchOutDir, fn);
-                if (File.Exists(shiftedFile))
-                {
-                    stem.RelativeUrl = $"/projects/{jobId}/pitch_{effectivePitch}/{fn}";
-                    stem.FilePath = shiftedFile;
-                }
+                stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
+                stem.FilePath = Path.Combine(activeStemsDir, fn);
             }
         }
 

@@ -970,108 +970,103 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
     int semitones = Math.Clamp(req?.Semitones ?? 0, -6, 6);
-
     string jobDir = Path.Combine(projectsDir, jobId);
     string stemsDir = Path.Combine(jobDir, "stems");
+    string rawStemsDir = Path.Combine(jobDir, "raw_stems");
+
+    if (!Directory.Exists(rawStemsDir))
+    {
+        Directory.CreateDirectory(rawStemsDir);
+        foreach (var wav in Directory.GetFiles(stemsDir, "*.wav"))
+        {
+            File.Copy(wav, Path.Combine(rawStemsDir, Path.GetFileName(wav)), true);
+        }
+    }
 
     if (semitones == 0)
     {
-        job.CurrentPitchShift = 0;
-        foreach (var stem in job.Stems)
+        // 恢復原調：若目前有變速，以 rawStemsDir 變速到 stemsDir；若無變速，直接從 rawStemsDir 還原
+        if (job.CurrentTempoRatio != 1.0 && job.TargetBpm.HasValue && Math.Abs(job.CurrentTempoRatio - 1.0) > 0.005)
         {
-            string fn = Path.GetFileName(stem.FilePath);
-            stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
-            string origStemFile = Path.Combine(stemsDir, fn);
-            if (File.Exists(origStemFile))
+            await orchestrator.CliRunner.TimeStretchStemsAsync(
+                rawStemsDir,
+                stemsDir,
+                job.CurrentTempoRatio,
+                async (pct, msg) => await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(jobId, "TIME_STRETCH", "恢復原調並保持最新變速", pct, pct, msg), ct),
+                ct);
+        }
+        else
+        {
+            foreach (var rawWav in Directory.GetFiles(rawStemsDir, "*.wav"))
             {
-                stem.FilePath = origStemFile;
+                File.Copy(rawWav, Path.Combine(stemsDir, Path.GetFileName(rawWav)), true);
             }
         }
-        string statePathZero = Path.Combine(jobDir, "project_state.json");
-        if (File.Exists(statePathZero))
+        job.CurrentPitchShift = 0;
+    }
+    else
+    {
+        // 執行變調：以 rawStemsDir 為基準，變調後若有變速則連鎖變速，最終直接輸出到 stemsDir
+        string tempWorkDir = Path.Combine(jobDir, ".temp_pitch_work");
+        Directory.CreateDirectory(tempWorkDir);
+        try
         {
-            try
+            await orchestrator.CliRunner.PitchShiftStemsAsync(
+                rawStemsDir,
+                tempWorkDir,
+                semitones,
+                async (pct, msg) => await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(jobId, "PITCH_SHIFT", $"GPU 神經變調 ({semitones:+d} 半音)", pct, pct, msg), ct),
+                ct);
+
+            if (job.CurrentTempoRatio != 1.0 && job.TargetBpm.HasValue && Math.Abs(job.CurrentTempoRatio - 1.0) > 0.005)
             {
-                var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePathZero));
-                if (jsonNode != null)
+                await orchestrator.CliRunner.TimeStretchStemsAsync(
+                    tempWorkDir,
+                    stemsDir,
+                    job.CurrentTempoRatio,
+                    async (pct, msg) => await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(jobId, "TIME_STRETCH", "時間軸自適應同步", pct, pct, msg), ct),
+                    ct);
+            }
+            else
+            {
+                foreach (var pwav in Directory.GetFiles(tempWorkDir, "*.wav"))
                 {
-                    jsonNode["pitchShift"] = 0;
-                    jsonNode["appliedPitchShift"] = 0;
-                    if (jsonNode["saved"]?["pitch"] != null)
-                    {
-                        jsonNode["saved"]!["pitch"]!["pitchShiftSemitones"] = 0;
-                        jsonNode["saved"]!["pitch"]!["targetKey"] = job.DetectedKeyDisplayName ?? "原調 (0)";
-                    }
-                    File.WriteAllText(statePathZero, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                    File.Copy(pwav, Path.Combine(stemsDir, Path.GetFileName(pwav)), true);
                 }
             }
-            catch { }
         }
-        return Results.Ok(new
+        finally
         {
-            jobId,
-            semitones = 0,
-            detectedKey = job.DetectedKey ?? "C Major",
-            detectedKeyDisplayName = job.DetectedKeyDisplayName ?? "C 大調 (C Major)",
-            targetKey = job.DetectedKeyDisplayName ?? "C 大調 (C Major)",
-            stems = job.Stems
-        });
+            try { Directory.Delete(tempWorkDir, true); } catch { }
+        }
+        job.CurrentPitchShift = semitones;
     }
 
-    string pitchOutDir = Path.Combine(jobDir, $"pitch_{semitones}");
-    Directory.CreateDirectory(pitchOutDir);
+    // 清理舊的歷史 pitch_* 或 tempo_* 冗餘目錄
+    CleanOldTransientDirs(jobDir);
 
-    int existingCount = Directory.Exists(pitchOutDir) ? Directory.GetFiles(pitchOutDir, "*.wav").Length : 0;
-    if (existingCount < job.Stems.Count)
-    {
-        await orchestrator.CliRunner.PitchShiftStemsAsync(
-            stemsDir,
-            pitchOutDir,
-            semitones,
-            async (pct, msg) =>
-            {
-                await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(
-                    jobId, "PITCH_SHIFT", $"GPU 神經變調 ({semitones:+d} 半音)", pct, pct, msg
-                ), ct);
-            },
-            ct);
-    }
-
-    job.CurrentPitchShift = semitones;
+    // 重新關聯 job.Stems 路徑，永遠指向 stemsDir
     foreach (var stem in job.Stems)
     {
         string fn = Path.GetFileName(stem.FilePath);
-        string shiftedFile = Path.Combine(pitchOutDir, fn);
-        if (File.Exists(shiftedFile))
-        {
-            stem.RelativeUrl = $"/projects/{jobId}/pitch_{semitones}/{fn}";
-            stem.FilePath = shiftedFile;
-        }
+        stem.FilePath = Path.Combine(stemsDir, fn);
+        stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
     }
 
     string origKey = job.DetectedKey ?? "C Major";
-    string targetKey = CalculateTransposedKey(origKey, semitones);
+    string targetKey = semitones == 0 ? (job.DetectedKeyDisplayName ?? origKey) : CalculateTransposedKey(origKey, semitones);
 
-    string statePathShift = Path.Combine(jobDir, "project_state.json");
-    if (File.Exists(statePathShift))
+    // 即時寫入唯一的 project_state.json
+    UpdateProjectStateJson(jobDir, node =>
     {
-        try
+        node["pitchShift"] = semitones;
+        node["appliedPitchShift"] = semitones;
+        if (node["saved"]?["pitch"] != null)
         {
-            var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePathShift));
-            if (jsonNode != null)
-            {
-                jsonNode["pitchShift"] = semitones;
-                jsonNode["appliedPitchShift"] = semitones;
-                if (jsonNode["saved"]?["pitch"] != null)
-                {
-                    jsonNode["saved"]!["pitch"]!["pitchShiftSemitones"] = semitones;
-                    jsonNode["saved"]!["pitch"]!["targetKey"] = targetKey;
-                }
-                File.WriteAllText(statePathShift, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            }
+            node["saved"]!["pitch"]!["pitchShiftSemitones"] = semitones;
+            node["saved"]!["pitch"]!["targetKey"] = targetKey;
         }
-        catch { }
-    }
+    });
 
     return Results.Ok(new
     {
@@ -1084,7 +1079,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
     });
 });
 
-// 7.7 Phase-Vocoder 時間軸無損變速不變調 API (0.5x ~ 2.0x, 21 軌平行加速)
+// 7.7 21 軌無損時間軸變速 API (永遠落地唯一最新狀態夾 stems/，基準為 raw_stems/)
 app.MapPost("/api/jobs/{jobId}/time-stretch", async (
     string jobId,
     TimeStretchRequest? req,
@@ -1096,142 +1091,122 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
     double origBpm = job.DetectedBpm ?? 120.0;
-    double tempoRatio = req?.TempoRatio ?? 1.0;
     double? targetBpm = req?.TargetBpm;
-
-    if (targetBpm == null || targetBpm <= 0)
-    {
-        targetBpm = Math.Round(origBpm * tempoRatio, 1);
-    }
-    else if (req?.TempoRatio == null && origBpm > 0)
+    double tempoRatio = req?.TempoRatio ?? 1.0;
+    if (targetBpm.HasValue && targetBpm.Value > 20)
     {
         tempoRatio = targetBpm.Value / origBpm;
     }
-    tempoRatio = Math.Clamp(tempoRatio, 0.5, 2.0);
+    tempoRatio = Math.Clamp(tempoRatio, 0.4, 2.5);
 
     string jobDir = Path.Combine(projectsDir, jobId);
     string stemsDir = Path.Combine(jobDir, "stems");
+    string rawStemsDir = Path.Combine(jobDir, "raw_stems");
 
-    // 若接近 1.0，表示恢復原始速度
-    if (Math.Abs(tempoRatio - 1.0) < 0.005)
+    if (!Directory.Exists(rawStemsDir))
     {
-        job.CurrentTempoRatio = 1.0;
-        job.TargetBpm = origBpm;
-        string statePathTempoOne = Path.Combine(jobDir, "project_state.json");
-        if (File.Exists(statePathTempoOne))
+        Directory.CreateDirectory(rawStemsDir);
+        foreach (var wav in Directory.GetFiles(stemsDir, "*.wav"))
         {
-            try
-            {
-                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathTempoOne)) ?? [];
-                dict["targetBpm"] = origBpm;
-                dict["appliedTempoRatio"] = 1.0;
-                File.WriteAllText(statePathTempoOne, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
-            }
-            catch { }
+            File.Copy(wav, Path.Combine(rawStemsDir, Path.GetFileName(wav)), true);
         }
-        foreach (var stem in job.Stems)
-        {
-            string fn = Path.GetFileName(stem.FilePath);
-            if (job.CurrentPitchShift != 0 && Directory.Exists(Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}")))
-            {
-                string pitchedFile = Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}", fn);
-                stem.RelativeUrl = $"/projects/{jobId}/pitch_{job.CurrentPitchShift}/{fn}";
-                if (File.Exists(pitchedFile)) stem.FilePath = pitchedFile;
-            }
-            else
-            {
-                stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
-                string origStemFile = Path.Combine(stemsDir, fn);
-                if (File.Exists(origStemFile)) stem.FilePath = origStemFile;
-            }
-        }
-        return Results.Ok(new
-        {
-            jobId,
-            tempoRatio = 1.0,
-            detectedBpm = origBpm,
-            targetBpm = origBpm,
-            stems = job.Stems
-        });
     }
 
-    int targetBpmInt = (int)Math.Round(targetBpm.Value);
-    string tempoOutDir = Path.Combine(jobDir, $"tempo_{targetBpmInt}");
-    Directory.CreateDirectory(tempoOutDir);
+    bool isReset = Math.Abs(tempoRatio - 1.0) < 0.005;
 
-    int existingCount = Directory.Exists(tempoOutDir) ? Directory.GetFiles(tempoOutDir, "*.wav").Length : 0;
-    if (existingCount < job.Stems.Count)
+    if (isReset)
     {
-        string sourceStemsDir = stemsDir;
+        // 恢復原速：若有變調，從 rawStemsDir 變調到 stemsDir；若無變調，直接從 rawStemsDir 覆蓋
         if (job.CurrentPitchShift != 0)
         {
-            string pitchedDir = Path.Combine(jobDir, $"pitch_{job.CurrentPitchShift}");
-            if (Directory.Exists(pitchedDir) && Directory.GetFiles(pitchedDir, "*.wav").Length >= job.Stems.Count)
+            await orchestrator.CliRunner.PitchShiftStemsAsync(
+                rawStemsDir,
+                stemsDir,
+                job.CurrentPitchShift,
+                async (pct, msg) => await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(jobId, "PITCH_SHIFT", "恢復原速並保持變調", pct, pct, msg), ct),
+                ct);
+        }
+        else
+        {
+            foreach (var rawWav in Directory.GetFiles(rawStemsDir, "*.wav"))
             {
-                sourceStemsDir = pitchedDir;
+                File.Copy(rawWav, Path.Combine(stemsDir, Path.GetFileName(rawWav)), true);
             }
         }
-
-        await orchestrator.CliRunner.TimeStretchStemsAsync(
-            sourceStemsDir,
-            tempoOutDir,
-            tempoRatio,
-            async (pct, msg) =>
-            {
-                await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(
-                    jobId, "TIME_STRETCH", $"時間軸變速 ({tempoRatio:F2}x, {targetBpmInt} BPM)", pct, pct, msg
-                ), ct);
-            },
-            ct);
+        job.CurrentTempoRatio = 1.0;
+        job.TargetBpm = origBpm;
     }
-
-    job.CurrentTempoRatio = tempoRatio;
-    job.TargetBpm = targetBpm;
-    string statePathTempoShift = Path.Combine(jobDir, "project_state.json");
-    if (File.Exists(statePathTempoShift) && targetBpm.HasValue)
+    else
     {
+        // 變速：基準是 rawStemsDir（若有變調先變調），然後拉伸到 stemsDir
+        string sourceDir = rawStemsDir;
+        string? tempPitchWork = null;
+        if (job.CurrentPitchShift != 0)
+        {
+            tempPitchWork = Path.Combine(jobDir, ".temp_pitch_stretch_work");
+            Directory.CreateDirectory(tempPitchWork);
+            await orchestrator.CliRunner.PitchShiftStemsAsync(
+                rawStemsDir,
+                tempPitchWork,
+                job.CurrentPitchShift,
+                async (pct, msg) => await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(jobId, "PITCH_SHIFT", "保持變調中", pct, pct, msg), ct),
+                ct);
+            sourceDir = tempPitchWork;
+        }
+
         try
         {
-            var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePathTempoShift));
-            if (jsonNode != null)
-            {
-                if (jsonNode["saved"]?["tempo"] != null)
-                {
-                    jsonNode["saved"]!["tempo"]!["lastModifiedBpm"] = targetBpm.Value;
-                    jsonNode["saved"]!["tempo"]!["targetBpm"] = targetBpm.Value;
-                    jsonNode["saved"]!["tempo"]!["tempoRatio"] = tempoRatio;
-                }
-                jsonNode["targetBpm"] = targetBpm.Value;
-                jsonNode["currentBpm"] = targetBpm.Value;
-                jsonNode["appliedTempoRatio"] = tempoRatio;
-                File.WriteAllText(statePathTempoShift, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                job.ProjectStateJson = File.ReadAllText(statePathTempoShift);
-            }
+            await orchestrator.CliRunner.TimeStretchStemsAsync(
+                sourceDir,
+                stemsDir,
+                tempoRatio,
+                async (pct, msg) => await hub.Clients.All.SendAsync("ProgressUpdated", new ProgressUpdateEvent(jobId, "TIME_STRETCH", $"時間軸變速 ({tempoRatio:F2}x, {Math.Round(targetBpm ?? origBpm)} BPM)", pct, pct, msg), ct),
+                ct);
         }
-        catch { }
+        finally
+        {
+            if (tempPitchWork != null) { try { Directory.Delete(tempPitchWork, true); } catch { } }
+        }
+
+        job.CurrentTempoRatio = tempoRatio;
+        job.TargetBpm = targetBpm ?? (origBpm * tempoRatio);
     }
+
+    // 清理舊的歷史 pitch_* 或 tempo_* 冗餘目錄
+    CleanOldTransientDirs(jobDir);
+
+    // 重新關聯 job.Stems 路徑，永遠指向 stemsDir
     foreach (var stem in job.Stems)
     {
         string fn = Path.GetFileName(stem.FilePath);
-        string stretchedFile = Path.Combine(tempoOutDir, fn);
-        if (File.Exists(stretchedFile))
-        {
-            stem.RelativeUrl = $"/projects/{jobId}/tempo_{targetBpmInt}/{fn}";
-            stem.FilePath = stretchedFile;
-        }
+        stem.FilePath = Path.Combine(stemsDir, fn);
+        stem.RelativeUrl = $"/projects/{jobId}/stems/{fn}";
     }
+
+    // 即時寫入唯一的 project_state.json
+    UpdateProjectStateJson(jobDir, node =>
+    {
+        node["targetBpm"] = job.TargetBpm.Value;
+        node["currentBpm"] = job.TargetBpm.Value;
+        node["appliedTempoRatio"] = tempoRatio;
+        if (node["saved"]?["tempo"] != null)
+        {
+            node["saved"]!["tempo"]!["lastModifiedBpm"] = job.TargetBpm.Value;
+            node["saved"]!["tempo"]!["targetBpm"] = job.TargetBpm.Value;
+            node["saved"]!["tempo"]!["tempoRatio"] = tempoRatio;
+        }
+    });
 
     return Results.Ok(new
     {
         jobId,
         tempoRatio,
         detectedBpm = origBpm,
-        targetBpm = targetBpm.Value,
+        targetBpm = job.TargetBpm.Value,
         stems = job.Stems
     });
 });
 
-// 8. 取得本機歷史分軌專案清單
 app.MapGet("/api/projects/history", (DagOrchestrator orchestrator) =>
 {
     var history = orchestrator.GetHistoryProjects();
@@ -1638,3 +1613,35 @@ static string FindProjectRoot()
 }
 
 app.Run();
+
+static void CleanOldTransientDirs(string jobDir)
+{
+    try
+    {
+        foreach (var d in Directory.GetDirectories(jobDir, "tempo_*"))
+        {
+            try { Directory.Delete(d, true); } catch { }
+        }
+        foreach (var d in Directory.GetDirectories(jobDir, "pitch_*"))
+        {
+            try { Directory.Delete(d, true); } catch { }
+        }
+    }
+    catch { }
+}
+
+static void UpdateProjectStateJson(string jobDir, Action<System.Text.Json.Nodes.JsonNode> updater)
+{
+    string statePath = Path.Combine(jobDir, "project_state.json");
+    if (!File.Exists(statePath)) return;
+    try
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePath));
+        if (node != null)
+        {
+            updater(node);
+            File.WriteAllText(statePath, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+    }
+    catch { }
+}
