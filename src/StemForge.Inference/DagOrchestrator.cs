@@ -323,9 +323,65 @@ public sealed class DagOrchestrator
             catch { }
         }
 
-        int currentPitchShift = 0;
-        double? targetBpm = detectedBpm;
+        // 自動掃描專案目錄下是否有變速目錄 (tempo_*)，並以「最後修改時間點 (LastWriteTime)」為基準
+        DirectoryInfo? latestTempoDir = null;
+        int? latestTempoBpm = null;
+        DateTime latestTempoTime = DateTime.MinValue;
+        try
+        {
+            var tempoDirs = Directory.GetDirectories(jobDir, "tempo_*");
+            foreach (var td in tempoDirs)
+            {
+                var di = new DirectoryInfo(td);
+                var match = System.Text.RegularExpressions.Regex.Match(di.Name, @"^tempo_(\d+)$");
+                if (match.Success && int.TryParse(match.Groups[1].Value, out int bVal) && bVal > 20)
+                {
+                    if (di.LastWriteTimeUtc > latestTempoTime)
+                    {
+                        latestTempoTime = di.LastWriteTimeUtc;
+                        latestTempoDir = di;
+                        latestTempoBpm = bVal;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 自動掃描專案目錄下是否有變調目錄 (pitch_*)，並以「最後修改時間點」為基準
+        DirectoryInfo? latestPitchDir = null;
+        int? latestPitchShift = null;
+        DateTime latestPitchTime = DateTime.MinValue;
+        try
+        {
+            var pitchDirs = Directory.GetDirectories(jobDir, "pitch_*");
+            foreach (var pd in pitchDirs)
+            {
+                var di = new DirectoryInfo(pd);
+                var match = System.Text.RegularExpressions.Regex.Match(di.Name, @"^pitch_([+-]?\d+)$");
+                if (match.Success && int.TryParse(match.Groups[1].Value, out int pVal))
+                {
+                    if (di.LastWriteTimeUtc > latestPitchTime)
+                    {
+                        latestPitchTime = di.LastWriteTimeUtc;
+                        latestPitchDir = di;
+                        latestPitchShift = pVal;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        int currentPitchShift = latestPitchShift ?? 0;
+        double? targetBpm = latestTempoBpm.HasValue ? (double)latestTempoBpm.Value : detectedBpm;
         double currentTempoRatio = 1.0;
+
+        // 若硬碟上有最新時間點產生的變速目錄 (如 tempo_118 比 detected_bpm.json 更新或無)，直接認定為最新速度
+        if (latestTempoBpm.HasValue)
+        {
+            detectedBpm = (double)latestTempoBpm.Value;
+            targetBpm = (double)latestTempoBpm.Value;
+            currentTempoRatio = 1.0;
+        }
 
         if (!string.IsNullOrEmpty(projectStateJson))
         {
@@ -337,27 +393,15 @@ public sealed class DagOrchestrator
                 {
                     currentPitchShift = psVal;
                 }
-                else if (root.TryGetProperty("appliedPitchShift", out var apsProp) && apsProp.TryGetInt32(out var apsVal))
+
+                if (root.TryGetProperty("originalBpm", out var obProp) && obProp.TryGetDouble(out var obVal) && obVal > 20)
                 {
-                    currentPitchShift = apsVal;
+                    detectedBpm = obVal;
                 }
 
                 if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
                 {
                     targetBpm = tbVal;
-                }
-                else if (root.TryGetProperty("currentBpm", out var cbProp) && cbProp.TryGetDouble(out var cbVal) && cbVal > 20)
-                {
-                    targetBpm = cbVal;
-                }
-
-                if (root.TryGetProperty("appliedTempoRatio", out var atrProp) && atrProp.TryGetDouble(out var atrVal) && atrVal > 0.1)
-                {
-                    currentTempoRatio = atrVal;
-                }
-                else if (detectedBpm.HasValue && detectedBpm.Value > 0 && targetBpm.HasValue && targetBpm.Value > 0)
-                {
-                    currentTempoRatio = targetBpm.Value / detectedBpm.Value;
                 }
 
                 if (root.TryGetProperty("separationMode", out var smProp))
@@ -372,41 +416,30 @@ public sealed class DagOrchestrator
             catch { }
         }
 
-        // 若曾進行過變調，且變調目錄存在，將音軌路徑指向該目錄
-        if (currentPitchShift != 0)
+        // 以最新時間點的變速目錄掛載音軌
+        if (latestTempoDir != null && latestTempoBpm.HasValue)
         {
-            string pitchDir = Path.Combine(jobDir, $"pitch_{currentPitchShift}");
-            if (Directory.Exists(pitchDir))
+            foreach (var stem in stemResults)
             {
-                foreach (var stem in stemResults)
+                string fn = Path.GetFileName(stem.FilePath);
+                string stretchedWav = Path.Combine(latestTempoDir.FullName, fn);
+                if (File.Exists(stretchedWav))
                 {
-                    string fn = Path.GetFileName(stem.FilePath);
-                    string shiftedWav = Path.Combine(pitchDir, fn);
-                    if (File.Exists(shiftedWav))
-                    {
-                        stem.FilePath = shiftedWav;
-                        stem.RelativeUrl = $"/projects/{jobId}/pitch_{currentPitchShift}/{fn}";
-                    }
+                    stem.FilePath = stretchedWav;
+                    stem.RelativeUrl = $"/projects/{jobId}/{latestTempoDir.Name}/{fn}";
                 }
             }
         }
-
-        // 若曾進行過變速，且變速目錄存在，將音軌路徑指向該目錄
-        if (targetBpm.HasValue && Math.Abs(currentTempoRatio - 1.0) > 0.005)
+        else if (latestPitchDir != null && latestPitchShift.HasValue && latestPitchShift.Value != 0)
         {
-            int tbInt = (int)Math.Round(targetBpm.Value);
-            string tempoDir = Path.Combine(jobDir, $"tempo_{tbInt}");
-            if (Directory.Exists(tempoDir))
+            foreach (var stem in stemResults)
             {
-                foreach (var stem in stemResults)
+                string fn = Path.GetFileName(stem.FilePath);
+                string shiftedWav = Path.Combine(latestPitchDir.FullName, fn);
+                if (File.Exists(shiftedWav))
                 {
-                    string fn = Path.GetFileName(stem.FilePath);
-                    string stretchedWav = Path.Combine(tempoDir, fn);
-                    if (File.Exists(stretchedWav))
-                    {
-                        stem.FilePath = stretchedWav;
-                        stem.RelativeUrl = $"/projects/{jobId}/tempo_{tbInt}/{fn}";
-                    }
+                    stem.FilePath = shiftedWav;
+                    stem.RelativeUrl = $"/projects/{jobId}/{latestPitchDir.Name}/{fn}";
                 }
             }
         }
