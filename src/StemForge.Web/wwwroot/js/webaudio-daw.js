@@ -2601,7 +2601,7 @@ class StemForgeDawApp {
       this.tempoValueLabel.textContent = `${roundedBpm} BPM`;
     }
 
-    this.showToast(`⚡ 已手動校正歌曲拍速為：${roundedBpm} BPM，已同步更新專案與 Reaper 節拍網格`);
+    this.showToast(`⚡ 已手動校正歌曲原速為：${roundedBpm} BPM，已永久保存！`);
 
     try {
       await fetch(`/api/jobs/${this.currentJob.jobId}/override-bpm`, {
@@ -2609,6 +2609,8 @@ class StemForgeDawApp {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bpm: roundedBpm })
       });
+      // 自動同步執行一次完整專案狀態存檔，確保 project_state.json 100% 同步
+      await this.saveCurrentProject(true);
     } catch (err) {
       console.warn("BPM override sync failed:", err);
     }
@@ -3224,14 +3226,31 @@ class StemForgeDawApp {
     };
   }
 
-  async saveCurrentProject() {
+  async saveCurrentProject(silent = false) {
     if (!this.currentJob) return;
 
-    // 檢查是否有拉動但未按套用的變速或變調
     const sliderPitch = this.pitchShiftSlider ? parseInt(this.pitchShiftSlider.value, 10) : 0;
     const appliedPitch = this.currentJob.currentPitchShift || 0;
     const sliderBpm = this.tempoSlider ? parseInt(this.tempoSlider.value, 10) : (this.originalBpm || 120);
     const appliedBpm = Math.round(this.currentBpm || this.currentJob.targetBpm || this.originalBpm || 120);
+
+    // 如果使用者在滑桿調整了 BPM，儲存時直接將原速基準更新為此 BPM
+    if (sliderBpm && sliderBpm > 20 && sliderBpm !== this.originalBpm) {
+      this.originalBpm = sliderBpm;
+      this.currentBpm = sliderBpm;
+      this.currentJob.detectedBpm = sliderBpm;
+      this.currentJob.targetBpm = sliderBpm;
+      if (this.detectedBpmBadge) {
+        this.detectedBpmBadge.innerHTML = `原速: ${sliderBpm} BPM <span style="font-size: 10px; color: #34d399;">[點擊修改]</span>`;
+      }
+      try {
+        await fetch(`/api/jobs/${this.currentJob.jobId}/override-bpm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bpm: sliderBpm })
+        });
+      } catch {}
+    }
 
     if (sliderPitch !== appliedPitch) {
       const confirmApply = confirm(`檢測到您調整了音高 (${sliderPitch > 0 ? "+" + sliderPitch : sliderPitch} 半音) 但尚未點擊「⚡ 套用變調」。\n\n是否立即執行變調並儲存？\n(按「確定」立即套用神經變調；按「取消」將只儲存當前已生效狀態)`);

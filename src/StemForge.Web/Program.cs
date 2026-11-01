@@ -874,10 +874,27 @@ app.MapPost("/api/jobs/{jobId}/override-bpm", async (
         if (doc.RootElement.TryGetProperty("bpm", out var bProp) && bProp.TryGetDouble(out double newBpm) && newBpm > 20 && newBpm < 400)
         {
             job.DetectedBpm = Math.Round(newBpm, 1);
+            job.TargetBpm = job.DetectedBpm;
+            job.CurrentTempoRatio = 1.0;
 
             string jobDir = Path.Combine(projectsDir, jobId);
             string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
             await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm = job.DetectedBpm.Value }), ct);
+
+            string statePath = Path.Combine(jobDir, "project_state.json");
+            if (File.Exists(statePath))
+            {
+                try
+                {
+                    var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePath)) ?? [];
+                    dict["originalBpm"] = job.DetectedBpm.Value;
+                    dict["targetBpm"] = job.DetectedBpm.Value;
+                    dict["currentBpm"] = job.DetectedBpm.Value;
+                    dict["appliedTempoRatio"] = 1.0;
+                    File.WriteAllText(statePath, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+                }
+                catch { }
+            }
 
             // 若已有 .rpp 檔案，同步更新 TEMPO 行
             try

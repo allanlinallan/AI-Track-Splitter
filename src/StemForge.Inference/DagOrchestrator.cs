@@ -1584,13 +1584,32 @@ public sealed class DagOrchestrator
                     job.CurrentPitchShift = apsVal;
                 }
 
-                if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
+                double? newBpmVal = null;
+                if (root.TryGetProperty("originalBpm", out var obProp) && obProp.TryGetDouble(out var obVal) && obVal > 20)
                 {
-                    job.TargetBpm = tbVal;
-                    if (job.DetectedBpm.HasValue && job.DetectedBpm.Value > 0)
+                    newBpmVal = Math.Round(obVal, 1);
+                }
+                else if (root.TryGetProperty("currentBpm", out var cbProp) && cbProp.TryGetDouble(out var cbVal) && cbVal > 20)
+                {
+                    newBpmVal = Math.Round(cbVal, 1);
+                }
+                else if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
+                {
+                    newBpmVal = Math.Round(tbVal, 1);
+                }
+
+                if (newBpmVal.HasValue)
+                {
+                    job.DetectedBpm = newBpmVal.Value;
+                    job.TargetBpm = newBpmVal.Value;
+                    job.CurrentTempoRatio = 1.0;
+
+                    string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
+                    try
                     {
-                        job.CurrentTempoRatio = tbVal / job.DetectedBpm.Value;
+                        await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm = newBpmVal.Value }), ct);
                     }
+                    catch { }
                 }
             }
             catch { }
