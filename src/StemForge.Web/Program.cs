@@ -857,6 +857,28 @@ app.MapPost("/api/jobs/{jobId}/override-key", async (
         string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
         await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key, displayName }), ct);
 
+        string statePath = Path.Combine(jobDir, "project_state.json");
+        if (File.Exists(statePath))
+        {
+            try
+            {
+                var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePath));
+                if (jsonNode != null)
+                {
+                    if (jsonNode["saved"]?["pitch"] != null)
+                    {
+                        jsonNode["saved"]!["pitch"]!["originalKey"] = key;
+                        jsonNode["saved"]!["pitch"]!["originalKeyDisplayName"] = displayName;
+                    }
+                    jsonNode["detectedKey"] = key;
+                    jsonNode["detectedKeyDisplayName"] = displayName;
+                    await File.WriteAllTextAsync(statePath, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), ct);
+                    job.ProjectStateJson = File.ReadAllText(statePath);
+                }
+            }
+            catch { }
+        }
+
         return Results.Ok(new { key, displayName });
     }
     return Results.BadRequest(new { error = "無效的請求資料" });
@@ -892,12 +914,23 @@ app.MapPost("/api/jobs/{jobId}/override-bpm", async (
             {
                 try
                 {
-                    var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePath)) ?? [];
-                    dict["originalBpm"] = job.DetectedBpm.Value;
-                    dict["targetBpm"] = job.DetectedBpm.Value;
-                    dict["currentBpm"] = job.DetectedBpm.Value;
-                    dict["appliedTempoRatio"] = 1.0;
-                    File.WriteAllText(statePath, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+                    var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePath));
+                    if (jsonNode != null)
+                    {
+                        if (jsonNode["saved"]?["tempo"] != null)
+                        {
+                            jsonNode["saved"]!["tempo"]!["originalBpm"] = job.DetectedBpm.Value;
+                            jsonNode["saved"]!["tempo"]!["lastModifiedBpm"] = job.DetectedBpm.Value;
+                            jsonNode["saved"]!["tempo"]!["targetBpm"] = job.DetectedBpm.Value;
+                            jsonNode["saved"]!["tempo"]!["tempoRatio"] = 1.0;
+                        }
+                        jsonNode["originalBpm"] = job.DetectedBpm.Value;
+                        jsonNode["targetBpm"] = job.DetectedBpm.Value;
+                        jsonNode["currentBpm"] = job.DetectedBpm.Value;
+                        jsonNode["appliedTempoRatio"] = 1.0;
+                        File.WriteAllText(statePath, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                        job.ProjectStateJson = File.ReadAllText(statePath);
+                    }
                 }
                 catch { }
             }
@@ -1159,10 +1192,21 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
     {
         try
         {
-            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathTempoShift)) ?? [];
-            dict["targetBpm"] = targetBpm.Value;
-            dict["appliedTempoRatio"] = tempoRatio;
-            File.WriteAllText(statePathTempoShift, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+            var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePathTempoShift));
+            if (jsonNode != null)
+            {
+                if (jsonNode["saved"]?["tempo"] != null)
+                {
+                    jsonNode["saved"]!["tempo"]!["lastModifiedBpm"] = targetBpm.Value;
+                    jsonNode["saved"]!["tempo"]!["targetBpm"] = targetBpm.Value;
+                    jsonNode["saved"]!["tempo"]!["tempoRatio"] = tempoRatio;
+                }
+                jsonNode["targetBpm"] = targetBpm.Value;
+                jsonNode["currentBpm"] = targetBpm.Value;
+                jsonNode["appliedTempoRatio"] = tempoRatio;
+                File.WriteAllText(statePathTempoShift, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                job.ProjectStateJson = File.ReadAllText(statePathTempoShift);
+            }
         }
         catch { }
     }

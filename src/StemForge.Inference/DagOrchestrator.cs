@@ -485,52 +485,33 @@ public sealed class DagOrchestrator
         if (string.IsNullOrEmpty(initialKey)) initialKey = detectedKey;
         if (string.IsNullOrEmpty(initialKeyZh)) initialKeyZh = detectedKeyZh;
 
-        // 判定哪一個目錄才是使用者最後執行的狀態：比較最後寫入時間戳，並優先尊崇 project_state.json
-        bool preferPitch = false;
-        bool preferTempo = false;
-
+        // 音訊路徑恢復判定：變調與變速各自獨立，音訊指向最新修改時間戳目錄
+        bool hasPitchedAudio = false;
         if (currentPitchShift != 0)
         {
             string specificPitchDir = Path.Combine(jobDir, $"pitch_{currentPitchShift}");
             if (Directory.Exists(specificPitchDir) && Directory.GetFiles(specificPitchDir, "*.wav").Length > 0)
             {
-                preferPitch = true;
                 latestPitchDir = new DirectoryInfo(specificPitchDir);
                 latestPitchShift = currentPitchShift;
+                latestPitchTime = latestPitchDir.LastWriteTimeUtc;
+                hasPitchedAudio = true;
             }
         }
 
-        if (!preferPitch)
+        bool hasTempoAudio = false;
+        if (latestTempoDir != null && latestTempoBpm.HasValue && Directory.GetFiles(latestTempoDir.FullName, "*.wav").Length > 0)
         {
-            if (latestPitchDir != null && latestPitchShift.HasValue && latestPitchShift.Value != 0 &&
-                latestTempoDir != null && latestTempoBpm.HasValue)
-            {
-                if (latestPitchTime >= latestTempoTime)
-                {
-                    preferPitch = true;
-                }
-                else
-                {
-                    preferTempo = true;
-                }
-            }
-            else if (latestPitchDir != null && latestPitchShift.HasValue && latestPitchShift.Value != 0)
-            {
-                preferPitch = true;
-            }
-            else if (latestTempoDir != null && latestTempoBpm.HasValue)
-            {
-                preferTempo = true;
-            }
+            hasTempoAudio = true;
         }
 
-        if (preferPitch && latestPitchDir != null && latestPitchShift.HasValue)
+        // 決定使用哪個音訊資料夾 (變調 vs 變速)，以最新產生時間為準
+        if (hasPitchedAudio && (!hasTempoAudio || latestPitchTime >= latestTempoTime))
         {
-            currentPitchShift = latestPitchShift.Value;
             foreach (var stem in stemResults)
             {
                 string fn = Path.GetFileName(stem.FilePath);
-                string shiftedWav = Path.Combine(latestPitchDir.FullName, fn);
+                string shiftedWav = Path.Combine(latestPitchDir!.FullName, fn);
                 if (File.Exists(shiftedWav))
                 {
                     stem.FilePath = shiftedWav;
@@ -538,20 +519,33 @@ public sealed class DagOrchestrator
                 }
             }
         }
-        else if (preferTempo && latestTempoDir != null && latestTempoBpm.HasValue)
+        else if (hasTempoAudio)
         {
-            detectedBpm = (double)latestTempoBpm.Value;
-            targetBpm = (double)latestTempoBpm.Value;
             foreach (var stem in stemResults)
             {
                 string fn = Path.GetFileName(stem.FilePath);
-                string stretchedWav = Path.Combine(latestTempoDir.FullName, fn);
+                string stretchedWav = Path.Combine(latestTempoDir!.FullName, fn);
                 if (File.Exists(stretchedWav))
                 {
                     stem.FilePath = stretchedWav;
                     stem.RelativeUrl = $"/projects/{jobId}/{latestTempoDir.Name}/{fn}";
                 }
             }
+        }
+
+        // 速度計算：嚴格確保使用者手動修改的 detected_bpm.json 與 project_state.json 為最高優先級
+        if (latestTempoBpm.HasValue && (!detectedBpm.HasValue || detectedBpm <= 20))
+        {
+            detectedBpm = (double)latestTempoBpm.Value;
+            targetBpm = (double)latestTempoBpm.Value;
+        }
+        if (!targetBpm.HasValue && detectedBpm.HasValue)
+        {
+            targetBpm = detectedBpm;
+        }
+        if (detectedBpm.HasValue && targetBpm.HasValue && detectedBpm.Value > 0)
+        {
+            currentTempoRatio = Math.Round(targetBpm.Value / detectedBpm.Value, 4);
         }
 
         var restored = new SeparationJobResult

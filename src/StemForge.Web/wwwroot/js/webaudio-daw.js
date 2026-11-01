@@ -806,6 +806,9 @@ class StemForgeDawApp {
           this.seekTo(currentPos);
           this.startPlayback();
         }
+        try {
+          await this.saveCurrentProject(true);
+        } catch {}
       }
     } catch (err) {
       alert("切換分離模式失敗: " + err.message);
@@ -839,6 +842,11 @@ class StemForgeDawApp {
   async loadJobIntoMixer(jobResult) {
     this.stopPlayback();
     this.currentJob = jobResult;
+    // 徹底清除前一專案殘留狀態，防止跨專案污染
+    this.originalBpm = null;
+    this.currentBpm = null;
+    this.leadTrimSec = 0;
+
     try {
       sessionStorage.setItem("stemforge_last_job", JSON.stringify(jobResult));
     } catch {}
@@ -884,8 +892,9 @@ class StemForgeDawApp {
     }
 
     // 2. 還原原調與變調狀態 (Pitch Shift)
-    const detectedKeyDisplay = savedState.pitch?.originalKeyDisplayName || earlyProjectState?.detectedKeyDisplayName || jobResult.detectedKeyDisplayName || jobResult.detectedKey || "D 大調 (D Major)";
-    const detectedKey = savedState.pitch?.originalKey || earlyProjectState?.detectedKey || jobResult.detectedKey || "D Major";
+    // 優先順序：後端即時狀態 jobResult.detectedKey > 專案存檔 saved.pitch.originalKey > 早期狀態 > 預設值
+    const detectedKey = jobResult.detectedKey || savedState.pitch?.originalKey || earlyProjectState?.detectedKey || "D Major";
+    const detectedKeyDisplay = jobResult.detectedKeyDisplayName || savedState.pitch?.originalKeyDisplayName || earlyProjectState?.detectedKeyDisplayName || (detectedKey + " 調");
     jobResult.detectedKey = detectedKey;
     jobResult.detectedKeyDisplayName = detectedKeyDisplay;
 
@@ -898,12 +907,12 @@ class StemForgeDawApp {
     }
 
     let savedPitch = 0;
-    if (savedState.pitch && typeof savedState.pitch.pitchShiftSemitones === "number") {
+    if (typeof jobResult.currentPitchShift === "number") {
+      savedPitch = jobResult.currentPitchShift;
+    } else if (savedState.pitch && typeof savedState.pitch.pitchShiftSemitones === "number") {
       savedPitch = savedState.pitch.pitchShiftSemitones;
     } else if (earlyProjectState && typeof earlyProjectState.pitchShift === "number") {
       savedPitch = earlyProjectState.pitchShift;
-    } else if (typeof jobResult.currentPitchShift === "number") {
-      savedPitch = jobResult.currentPitchShift;
     }
     jobResult.currentPitchShift = savedPitch;
     if (this.pitchShiftSlider) {
@@ -911,31 +920,27 @@ class StemForgeDawApp {
     }
     this.updatePitchUiOnly(savedPitch);
 
-    // 3. 還原拍速狀態 (BPM)：依使用者核心邏輯，存檔記錄的原速/最後修改速度為最高依據
+    // 3. 還原拍速狀態 (BPM)：依使用者核心邏輯，存檔記錄的原速/最後修改速度為最高依據，杜絕跨專案污染
     let bpmVal = 120;
     if (savedState.tempo?.originalBpm && savedState.tempo.originalBpm > 20) {
-      bpmVal = Math.round(savedState.tempo.originalBpm);
-    } else if (earlyProjectState?.originalBpm && earlyProjectState.originalBpm > 20) {
-      bpmVal = Math.round(earlyProjectState.originalBpm);
+      bpmVal = Math.round(savedState.tempo.originalBpm * 10) / 10;
     } else if (jobResult.detectedBpm && jobResult.detectedBpm > 20) {
-      bpmVal = Math.round(jobResult.detectedBpm);
-    } else if (this.currentBpm && this.currentBpm > 30) {
-      bpmVal = this.currentBpm;
-    } else if (this.originalBpm) {
-      bpmVal = this.originalBpm;
+      bpmVal = Math.round(jobResult.detectedBpm * 10) / 10;
+    } else if (earlyProjectState?.originalBpm && earlyProjectState.originalBpm > 20) {
+      bpmVal = Math.round(earlyProjectState.originalBpm * 10) / 10;
     }
     this.originalBpm = bpmVal;
     jobResult.detectedBpm = bpmVal;
 
     let targetBpm = bpmVal;
     if (savedState.tempo?.lastModifiedBpm && savedState.tempo.lastModifiedBpm > 20) {
-      targetBpm = Math.round(savedState.tempo.lastModifiedBpm);
+      targetBpm = Math.round(savedState.tempo.lastModifiedBpm * 10) / 10;
     } else if (savedState.tempo?.targetBpm && savedState.tempo.targetBpm > 20) {
-      targetBpm = Math.round(savedState.tempo.targetBpm);
-    } else if (earlyProjectState?.targetBpm && earlyProjectState.targetBpm > 20) {
-      targetBpm = Math.round(earlyProjectState.targetBpm);
+      targetBpm = Math.round(savedState.tempo.targetBpm * 10) / 10;
     } else if (typeof jobResult.targetBpm === "number" && jobResult.targetBpm > 20) {
-      targetBpm = Math.round(jobResult.targetBpm);
+      targetBpm = Math.round(jobResult.targetBpm * 10) / 10;
+    } else if (earlyProjectState?.targetBpm && earlyProjectState.targetBpm > 20) {
+      targetBpm = Math.round(earlyProjectState.targetBpm * 10) / 10;
     }
     this.currentBpm = targetBpm;
     jobResult.targetBpm = targetBpm;
@@ -2622,6 +2627,8 @@ class StemForgeDawApp {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, displayName })
       });
+      // 自動同步執行一次完整專案狀態存檔，確保 project_state.json 100% 同步
+      await this.saveCurrentProject(true);
     } catch (err) {
       console.warn("Key override sync failed:", err);
     }
@@ -2781,6 +2788,9 @@ class StemForgeDawApp {
       if (wasPlaying) {
         this.startPlayback();
       }
+      try {
+        await this.saveCurrentProject(true);
+      } catch {}
     } catch (err) {
       alert(`變調失敗: ${err.message}`);
     } finally {
@@ -2929,6 +2939,9 @@ class StemForgeDawApp {
       if (wasPlaying) {
         this.startPlayback();
       }
+      try {
+        await this.saveCurrentProject(true);
+      } catch {}
     } catch (err) {
       alert(`變速失敗: ${err.message}`);
     } finally {
