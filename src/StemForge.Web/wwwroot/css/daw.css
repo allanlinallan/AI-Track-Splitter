@@ -595,7 +595,9 @@ body {
 .progress-banner {
   background: #0d1321;
   border-bottom: 1px solid var(--border-col);
-  padding: 4px 14px 2px 14px;
+  padding: 4px 18px 2px 14px;
+  box-sizing: border-box;
+  width: 100%;
   flex-shrink: 0;
 }
 
@@ -649,8 +651,9 @@ body {
 .pct-num {
   font-family: Consolas, monospace;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 11.5px;
   color: #38bdf8;
+  margin-right: 2px;
 }
 
 .progress-track {
@@ -666,14 +669,16 @@ body {
   transition: width 0.2s ease;
 }
 
-/* Transport Bar — 緊湊專業 3 行 DAW 工具列 */
+/* Transport Bar — 緊湊專業 3 行 DAW 工具列 (自適應防溢出設計) */
 .transport-bar {
   background: #111827;
   border-bottom: 1px solid var(--border-col);
-  padding: 5px 12px;
+  padding: 5px 16px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 5px;
+  width: 100%;
   flex-shrink: 0;
 }
 
@@ -683,12 +688,25 @@ body {
   justify-content: space-between;
   width: 100%;
   gap: 8px;
+  box-sizing: border-box;
+}
+
+.transport-row-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.transport-row-tuning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .transport-group-left {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-wrap: nowrap;
 }
 
@@ -703,7 +721,7 @@ body {
   background: #1e293b;
   border: 1px solid #334155;
   color: #f1f5f9;
-  padding: 3px 8px;
+  padding: 3px 7px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
@@ -712,7 +730,7 @@ body {
   height: 25px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   transition: all 0.15s ease;
 }
 
@@ -741,19 +759,19 @@ body {
 .metronome-control-box {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid #334155;
   border-radius: 4px;
-  padding: 1px 7px;
+  padding: 1px 6px;
   height: 25px;
 }
 
 .metro-toggle-label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
+  gap: 3px;
+  font-size: 10px;
   font-weight: 600;
   color: #cbd5e1;
   cursor: pointer;
@@ -769,8 +787,8 @@ body {
 .metro-toggle-label input[type="checkbox"] {
   accent-color: #38bdf8;
   cursor: pointer;
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   margin: 0;
 }
 
@@ -781,7 +799,7 @@ body {
   border-radius: 3px;
   font-size: 10px;
   font-weight: 700;
-  padding: 1px 4px;
+  padding: 1px 3px;
   cursor: pointer;
   outline: none;
 }
@@ -790,10 +808,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
-  font-size: 8.5px;
+  font-size: 8px;
   font-weight: 800;
   font-family: Consolas, monospace;
   color: #475569;
@@ -824,7 +842,7 @@ body {
   padding: 2px 8px;
   border-radius: 4px;
   font-family: Consolas, "Courier New", monospace;
-  font-size: 13px;
+  font-size: 12.5px;
   color: #38bdf8;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -835,16 +853,16 @@ body {
 }
 
 .master-fader-box {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 10.5px;
   white-space: nowrap;
   height: 25px;
 }
 
 .master-fader-box input[type="range"] {
-  width: 80px;
+  width: 75px;
   height: 4px;
   accent-color: #38bdf8;
   cursor: pointer;
@@ -861,25 +879,17 @@ body {
   white-space: nowrap;
 }
 
-/* Row 2: 剪輯工具箱 + 變調 + 變速（單行平鋪） */
-.transport-row-tools {
-  justify-content: flex-start;
-  gap: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
 /* Pitch Shift Panel (單行緊湊) */
 .pitch-shift-panel {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: #090e1a;
   border: 1px solid #1e293b;
   border-radius: 4px;
-  padding: 2px 7px;
-  height: 27px;
+  padding: 2px 6px;
+  height: 26px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -887,7 +897,7 @@ body {
 .pitch-key-info {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-size: 10.5px;
 }
 
@@ -903,7 +913,7 @@ body {
 
 .pitch-arrow {
   color: #64748b;
-  font-size: 9px;
+  font-size: 8.5px;
 }
 
 .pitch-badge-target {
@@ -923,7 +933,7 @@ body {
 }
 
 .pitch-controls-row input[type="range"] {
-  width: 60px;
+  width: 50px;
   height: 4px;
   accent-color: #a855f7;
   cursor: pointer;
@@ -935,7 +945,7 @@ body {
   color: #cbd5e1;
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   cursor: pointer;
   line-height: 1.1;
@@ -951,7 +961,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   color: #f1f5f9;
-  min-width: 40px;
+  min-width: 38px;
   text-align: center;
 }
 
@@ -996,12 +1006,12 @@ body {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: #090e1a;
   border: 1px solid #1e293b;
   border-radius: 4px;
-  padding: 2px 7px;
-  height: 27px;
+  padding: 2px 6px;
+  height: 26px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -1009,7 +1019,7 @@ body {
 .tempo-info {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-size: 10.5px;
 }
 
@@ -1025,7 +1035,7 @@ body {
 
 .tempo-arrow {
   color: #64748b;
-  font-size: 9px;
+  font-size: 8.5px;
 }
 
 .tempo-badge-target {
@@ -1045,7 +1055,7 @@ body {
 }
 
 .tempo-controls-row input[type="range"] {
-  width: 65px;
+  width: 55px;
   height: 4px;
   accent-color: #06b6d4;
   cursor: pointer;
@@ -1057,7 +1067,7 @@ body {
   color: #cbd5e1;
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   cursor: pointer;
   line-height: 1.1;
@@ -1073,7 +1083,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   color: #f1f5f9;
-  min-width: 44px;
+  min-width: 42px;
   text-align: center;
 }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
-  <link rel="stylesheet" href="/css/daw.css?v=57" />
+  <link rel="stylesheet" href="/css/daw.css?v=58" />
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=1" />
   <link rel="apple-touch-icon" href="/images/logo.png?v=1" />
@@ -137,9 +137,9 @@
         </div>
       </section>
 
-      <!-- DAW 多軌同步混音控制器 (Master Transport & Null Test) - 緊湊 3 行專業佈局 -->
+      <!-- DAW 多軌同步混音控制器 (Master Transport & Null Test) - 完美平衡 3 行專業佈局 (寬度控制在 950px 內，絕不跑出螢幕) -->
       <section class="transport-bar">
-        <!-- 第 1 行：走帶總控 + 節拍器 + 時間碼 + Master -->
+        <!-- 第 1 行：走帶播放 + 節拍器預拍 + 片段剪輯 + 時間碼 -->
         <div class="transport-row transport-row-primary">
           <div class="transport-group-left">
             <button class="t-btn t-play" id="btnPlayPause" disabled>▶ 播放 (Play)</button>
@@ -158,16 +158,44 @@
                 <span>⏳ 空一小節 (預拍)</span>
               </label>
               <select id="selCountInPickup" class="metro-select" title="弱起拍進歌點：設定音樂在預備小節的第幾拍進場發聲" style="display: none;">
-                <option value="0">🎯 正拍進歌</option>
-                <option value="0.5">🎵 倒數半拍</option>
-                <option value="1">🎵 倒數 1 拍</option>
-                <option value="2">🎵 倒數 2 拍</option>
+                <option value="0">🎯 正拍進歌 (第 1 拍)</option>
+                <option value="0.5">🎵 倒數半拍 (搶拍)</option>
+                <option value="1">🎵 倒數 1 拍 (第 4 拍進歌)</option>
+                <option value="2">🎵 倒數 2 拍 (第 3 拍進歌)</option>
               </select>
               <label class="metro-toggle-label" title="播放時依照歌曲 BPM 速度同步敲打節拍器（每小節第一拍高音重音，2/3/4 拍次重音）">
                 <input type="checkbox" id="chkMetronome" />
                 <span>🔔 節拍器 (BPM)</span>
               </label>
               <span class="metro-beat-indicator" id="metroBeatIndicator" title="節拍器對拍閃爍燈 (第 1 拍金燈，2/3/4 拍藍燈)">●</span>
+            </div>
+
+            <span class="toolbar-sep">|</span>
+
+            <!-- ✂️ 片段剪輯與編曲工具箱 (整合至第 1 行中央) -->
+            <div class="edit-tools-panel" id="editToolsPanel">
+              <span class="tools-label">剪輯:</span>
+              <button class="edit-tool-btn active" id="btnToolPointer" title="一般選取/跳轉播放模式 (快速鍵: 1)">🖐️ 選取</button>
+              <button class="edit-tool-btn" id="btnToolDrag" title="拖曳平移對齊模式：在波形上按住左右拖曳即可自由滑動對齊節奏 (快速鍵: 2)">↔️ 拖曳</button>
+              <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 3)">✂️ 剪刀</button>
+              <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 4)">🔇 消音</button>
+              <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段與平移">⟲</button>
+              <span class="toolbar-sep">|</span>
+              <label class="nudge-step-label" title="設定音軌 ◀ / ▶ 按鈕微調步進量 (可選 0.5ms ~ 50ms)">
+                <span>步進:</span>
+                <select id="selNudgeStep" class="nudge-step-select">
+                  <option value="0.0005">0.5ms</option>
+                  <option value="0.001" selected>1ms</option>
+                  <option value="0.002">2ms</option>
+                  <option value="0.005">5ms</option>
+                  <option value="0.010">10ms</option>
+                  <option value="0.020">20ms</option>
+                  <option value="0.050">50ms</option>
+                </select>
+              </label>
+              <span class="toolbar-sep">|</span>
+              <button class="edit-tool-btn btn-tool-trim" id="btnAutoTrimSilence" title="AI 自動偵測開頭無音訊靜音，智慧對齊第 1 拍（自動識別弱起拍/半拍起音）">⚡ 自動切齊開頭</button>
+              <button class="edit-tool-btn btn-tool-reset" id="btnResetTrim" style="display: none;" title="恢復原始開頭位置">⟲ 恢復原點</button>
             </div>
           </div>
 
@@ -176,107 +204,86 @@
             <span class="sep">/</span>
             <span id="totalTimeText">00:00.000</span>
           </div>
+        </div>
 
+        <!-- 第 2 行：AI 變調 + AI 變速 + Master 總音量與 Null 誤差 (並列展開，超寬裕空間) -->
+        <div class="transport-row transport-row-tuning">
+          <div class="transport-group-left">
+            <!-- AI 神經變調控制組 (單行緊湊化) -->
+            <div class="pitch-shift-panel" id="pitchShiftPanel">
+              <div class="pitch-key-info">
+                <div style="position: relative; display: inline-flex; align-items: center;">
+                  <span class="pitch-badge-orig" id="detectedKeyBadge" title="點擊直接修改原調（以大調為主）" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原調: -- ▾</span>
+                  <select id="keyOverrideSelect" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;" title="點擊選擇原調 (以大調為主)">
+                    <option value="" disabled selected>-- 選擇原調 --</option>
+                    <optgroup label="🎵 常用大調 (Major)">
+                      <option value="C Major|C 大調 (C Major)">C 大調 (C Major)</option>
+                      <option value="C# Major|C# / Db 大調 (C# Major)">C# / Db 大調</option>
+                      <option value="D Major|D 大調 (D Major)">D 大調 (D Major)</option>
+                      <option value="D# Major|D# / Eb 大調 (Eb Major)">D# / Eb 大調</option>
+                      <option value="E Major|E 大調 (E Major)">E 大調 (E Major)</option>
+                      <option value="F Major|F 大調 (F Major)">F 大調 (F Major)</option>
+                      <option value="F# Major|F# / Gb 大調 (F# Major)">F# / Gb 大調</option>
+                      <option value="G Major|G 大調 (G Major)">G 大調 (G Major)</option>
+                      <option value="G# Major|G# / Ab 大調 (Ab Major)">G# / Ab 大調</option>
+                      <option value="A Major|A 大調 (A Major)">A 大調 (A Major)</option>
+                      <option value="A# Major|A# / Bb 大調 (Bb Major)">A# / Bb 大調</option>
+                      <option value="B Major|B 大調 (B Major)">B 大調 (B Major)</option>
+                    </optgroup>
+                    <optgroup label="🎼 小調 (Minor)">
+                      <option value="A Minor|A 小調 (A Minor)">A 小調 (A Minor)</option>
+                      <option value="E Minor|E 小調 (E Minor)">E 小調 (E Minor)</option>
+                      <option value="B Minor|B 小調 (B Minor)">B 小調 (B Minor)</option>
+                      <option value="F# Minor|F# 小調 (F# Minor)">F# 小調 (F# Minor)</option>
+                      <option value="C# Minor|C# 小調 (C# Minor)">C# 小調 (C# Minor)</option>
+                      <option value="G# Minor|G# 小調 (G# Minor)">G# 小調 (G# Minor)</option>
+                      <option value="D# Minor|D# 小調 (D# Minor)">D# 小調 (D# Minor)</option>
+                      <option value="D Minor|D 小調 (D Minor)">D 小調 (D Minor)</option>
+                      <option value="G Minor|G 小調 (G Minor)">G 小調 (G Minor)</option>
+                      <option value="C Minor|C 小調 (C Minor)">C 小調 (C Minor)</option>
+                      <option value="F Minor|F 小調 (F Minor)">F 小調 (F Minor)</option>
+                      <option value="A# Minor|A# / Bb 小調 (Bb Minor)">A# / Bb 小調</option>
+                    </optgroup>
+                  </select>
+                </div>
+                <span class="pitch-arrow">➔</span>
+                <span class="pitch-badge-target" id="targetKeyBadge" title="當前變調目標調性">目標: 原調 (0)</span>
+              </div>
+              <div class="pitch-controls-row">
+                <button class="pitch-step-btn" id="btnPitchDown" title="降 1 個半音">-1</button>
+                <input type="range" id="pitchShiftSlider" min="-6" max="6" step="1" value="0" title="升降 Key (±6 半音)" />
+                <button class="pitch-step-btn" id="btnPitchUp" title="升 1 個半音">+1</button>
+                <span class="pitch-value-label" id="pitchValueLabel">0 半音</span>
+                <button class="btn-xs btn-pitch-apply" id="btnApplyPitch" title="確定並執行神經變調">⚡ 套用變調</button>
+                <button class="btn-xs btn-pitch-reset" id="btnResetPitch" title="一鍵重設回原調 (0 半音)">⟲ 恢復原調</button>
+              </div>
+            </div>
+
+            <span class="toolbar-sep">|</span>
+
+            <!-- AI 時間軸拍速控制組 (單行緊湊化) -->
+            <div class="tempo-panel" id="tempoPanel">
+              <div class="tempo-info">
+                <span class="tempo-badge-orig" id="detectedBpmBadge" title="點擊修改歌曲原速 BPM (將同步更新時間軸與 Reaper 節拍網格)" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原速: -- BPM</span>
+                <span class="tempo-arrow">➔</span>
+                <span class="tempo-badge-target" id="targetBpmBadge" title="當前目標拍速">目標: 原速</span>
+              </div>
+              <div class="tempo-controls-row">
+                <button class="tempo-step-btn" id="btnTempoDown" title="減少 1 BPM">-1</button>
+                <input type="range" id="tempoSlider" min="50" max="220" step="1" value="120" title="調整拍速 (BPM)" />
+                <button class="tempo-step-btn" id="btnTempoUp" title="增加 1 BPM">+1</button>
+                <span class="tempo-value-label" id="tempoValueLabel">120 BPM</span>
+                <button class="btn-xs btn-tempo-apply" id="btnApplyTempo" title="確定並執行 21 軌無損時間軸變速">⚡ 套用新拍速</button>
+                <button class="btn-xs btn-tempo-reset" id="btnResetTempo" title="一鍵重設回原速">⟲ 恢復原速</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右側：Master 推子與 Null 誤差 (在第 2 行享有超寬裕右側空間，永不跑出) -->
           <div class="master-fader-box">
             <label>Master</label>
             <input type="range" id="masterVolumeSlider" min="0" max="1.2" step="0.01" value="1.0" />
             <span id="nullCancellationBadge" class="null-badge" title="所有分軌相加與原曲的最大相位誤差">Null 誤差: -- dBFS</span>
-          </div>
-        </div>
-
-        <!-- 第 2 行：片段剪輯 + AI 變調 + AI 變速（單行水平展開） -->
-        <div class="transport-row transport-row-tools">
-          <!-- ✂️ 片段剪輯與編曲工具箱 -->
-          <div class="edit-tools-panel" id="editToolsPanel">
-            <span class="tools-label">剪輯:</span>
-            <button class="edit-tool-btn active" id="btnToolPointer" title="一般選取/跳轉播放模式 (快速鍵: 1)">🖐️ 選取</button>
-            <button class="edit-tool-btn" id="btnToolDrag" title="拖曳平移對齊模式：在波形上按住左右拖曳即可自由滑動對齊節奏 (快速鍵: 2)">↔️ 拖曳對齊</button>
-            <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 3)">✂️ 剪刀</button>
-            <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 4)">🔇 片段消音</button>
-            <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段與平移">⟲ 重置剪輯</button>
-            <span class="toolbar-sep">|</span>
-            <label class="nudge-step-label" title="設定音軌 ◀ / ▶ 按鈕微調步進量 (可選 0.5ms ~ 50ms)">
-              <span>步進:</span>
-              <select id="selNudgeStep" class="nudge-step-select">
-                <option value="0.0005">0.5ms</option>
-                <option value="0.001" selected>1ms</option>
-                <option value="0.002">2ms</option>
-                <option value="0.005">5ms</option>
-                <option value="0.010">10ms</option>
-                <option value="0.020">20ms</option>
-                <option value="0.050">50ms</option>
-              </select>
-            </label>
-            <span class="toolbar-sep">|</span>
-            <button class="edit-tool-btn btn-tool-trim" id="btnAutoTrimSilence" title="AI 自動偵測開頭無音訊靜音，智慧對齊第 1 拍（自動識別弱起拍/半拍起音）">⚡ 自動切齊開頭</button>
-            <button class="edit-tool-btn btn-tool-reset" id="btnResetTrim" style="display: none;" title="恢復原始開頭位置">⟲ 恢復原點</button>
-          </div>
-
-          <!-- AI 神經變調控制組 (單行緊湊化) -->
-          <div class="pitch-shift-panel" id="pitchShiftPanel">
-            <div class="pitch-key-info">
-              <div style="position: relative; display: inline-flex; align-items: center;">
-                <span class="pitch-badge-orig" id="detectedKeyBadge" title="點擊直接修改原調（以大調為主）" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原調: -- ▾</span>
-                <select id="keyOverrideSelect" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;" title="點擊選擇原調 (以大調為主)">
-                  <option value="" disabled selected>-- 選擇原調 --</option>
-                  <optgroup label="🎵 常用大調 (Major)">
-                    <option value="C Major|C 大調 (C Major)">C 大調 (C Major)</option>
-                    <option value="C# Major|C# / Db 大調 (C# Major)">C# / Db 大調</option>
-                    <option value="D Major|D 大調 (D Major)">D 大調 (D Major)</option>
-                    <option value="D# Major|D# / Eb 大調 (Eb Major)">D# / Eb 大調</option>
-                    <option value="E Major|E 大調 (E Major)">E 大調 (E Major)</option>
-                    <option value="F Major|F 大調 (F Major)">F 大調 (F Major)</option>
-                    <option value="F# Major|F# / Gb 大調 (F# Major)">F# / Gb 大調</option>
-                    <option value="G Major|G 大調 (G Major)">G 大調 (G Major)</option>
-                    <option value="G# Major|G# / Ab 大調 (Ab Major)">G# / Ab 大調</option>
-                    <option value="A Major|A 大調 (A Major)">A 大調 (A Major)</option>
-                    <option value="A# Major|A# / Bb 大調 (Bb Major)">A# / Bb 大調</option>
-                    <option value="B Major|B 大調 (B Major)">B 大調 (B Major)</option>
-                  </optgroup>
-                  <optgroup label="🎼 小調 (Minor)">
-                    <option value="A Minor|A 小調 (A Minor)">A 小調 (A Minor)</option>
-                    <option value="E Minor|E 小調 (E Minor)">E 小調 (E Minor)</option>
-                    <option value="B Minor|B 小調 (B Minor)">B 小調 (B Minor)</option>
-                    <option value="F# Minor|F# 小調 (F# Minor)">F# 小調 (F# Minor)</option>
-                    <option value="C# Minor|C# 小調 (C# Minor)">C# 小調 (C# Minor)</option>
-                    <option value="G# Minor|G# 小調 (G# Minor)">G# 小調 (G# Minor)</option>
-                    <option value="D# Minor|D# 小調 (D# Minor)">D# 小調 (D# Minor)</option>
-                    <option value="D Minor|D 小調 (D Minor)">D 小調 (D Minor)</option>
-                    <option value="G Minor|G 小調 (G Minor)">G 小調 (G Minor)</option>
-                    <option value="C Minor|C 小調 (C Minor)">C 小調 (C Minor)</option>
-                    <option value="F Minor|F 小調 (F Minor)">F 小調 (F Minor)</option>
-                    <option value="A# Minor|A# / Bb 小調 (Bb Minor)">A# / Bb 小調</option>
-                  </optgroup>
-                </select>
-              </div>
-              <span class="pitch-arrow">➔</span>
-              <span class="pitch-badge-target" id="targetKeyBadge" title="當前變調目標調性">目標: 原調 (0)</span>
-            </div>
-            <div class="pitch-controls-row">
-              <button class="pitch-step-btn" id="btnPitchDown" title="降 1 個半音">-1</button>
-              <input type="range" id="pitchShiftSlider" min="-6" max="6" step="1" value="0" title="升降 Key (±6 半音)" />
-              <button class="pitch-step-btn" id="btnPitchUp" title="升 1 個半音">+1</button>
-              <span class="pitch-value-label" id="pitchValueLabel">0 半音</span>
-              <button class="btn-xs btn-pitch-apply" id="btnApplyPitch" title="確定並執行神經變調">⚡ 套用變調</button>
-              <button class="btn-xs btn-pitch-reset" id="btnResetPitch" title="一鍵重設回原調 (0 半音)">⟲ 恢復原調</button>
-            </div>
-          </div>
-
-          <!-- AI 時間軸拍速控制組 (單行緊湊化) -->
-          <div class="tempo-panel" id="tempoPanel">
-            <div class="tempo-info">
-              <span class="tempo-badge-orig" id="detectedBpmBadge" title="點擊修改歌曲原速 BPM (將同步更新時間軸與 Reaper 節拍網格)" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原速: -- BPM</span>
-              <span class="tempo-arrow">➔</span>
-              <span class="tempo-badge-target" id="targetBpmBadge" title="當前目標拍速">目標: 原速</span>
-            </div>
-            <div class="tempo-controls-row">
-              <button class="tempo-step-btn" id="btnTempoDown" title="減少 1 BPM">-1</button>
-              <input type="range" id="tempoSlider" min="50" max="220" step="1" value="120" title="調整拍速 (BPM)" />
-              <button class="tempo-step-btn" id="btnTempoUp" title="增加 1 BPM">+1</button>
-              <span class="tempo-value-label" id="tempoValueLabel">120 BPM</span>
-              <button class="btn-xs btn-tempo-apply" id="btnApplyTempo" title="確定並執行 21 軌無損時間軸變速">⚡ 套用新拍速</button>
-              <button class="btn-xs btn-tempo-reset" id="btnResetTempo" title="一鍵重設回原速">⟲ 恢復原速</button>
-            </div>
           </div>
         </div>
 
