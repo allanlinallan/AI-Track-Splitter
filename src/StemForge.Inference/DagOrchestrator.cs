@@ -243,8 +243,34 @@ public sealed class DagOrchestrator
         string rppCandidate = Path.Combine(jobDir, $"{Path.GetFileNameWithoutExtension(songName)}_StemForge.rpp");
         string? rppUrl = File.Exists(rppCandidate) ? $"/projects/{jobId}/{Uri.EscapeDataString(Path.GetFileName(rppCandidate))}" : null;
 
-        string detectedKey = "D Major";
-        string detectedKeyZh = "D 大調 (D Major)";
+        double? initialBpm = null;
+        string initialBpmPath = Path.Combine(jobDir, "initial_bpm.json");
+        if (File.Exists(initialBpmPath))
+        {
+            try
+            {
+                using var ibDoc = JsonDocument.Parse(File.ReadAllText(initialBpmPath));
+                if (ibDoc.RootElement.TryGetProperty("bpm", out var ibProp)) initialBpm = ibProp.GetDouble();
+            }
+            catch { }
+        }
+
+        string? initialKey = null;
+        string? initialKeyZh = null;
+        string initialKeyPath = Path.Combine(jobDir, "initial_key.json");
+        if (File.Exists(initialKeyPath))
+        {
+            try
+            {
+                using var ikDoc = JsonDocument.Parse(File.ReadAllText(initialKeyPath));
+                initialKey = ikDoc.RootElement.GetProperty("key").GetString();
+                initialKeyZh = ikDoc.RootElement.GetProperty("displayName").GetString();
+            }
+            catch { }
+        }
+
+        string detectedKey = initialKey ?? "D Major";
+        string detectedKeyZh = initialKeyZh ?? "D 大調 (D Major)";
         string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
         if (File.Exists(keyJsonPath))
         {
@@ -257,7 +283,7 @@ public sealed class DagOrchestrator
             catch { }
         }
 
-        double? detectedBpm = null;
+        double? detectedBpm = initialBpm;
         string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
         if (File.Exists(bpmJsonPath))
         {
@@ -389,32 +415,75 @@ public sealed class DagOrchestrator
             {
                 using var sDoc = JsonDocument.Parse(projectStateJson);
                 var root = sDoc.RootElement;
-                if (root.TryGetProperty("pitchShift", out var psProp) && psProp.TryGetInt32(out var psVal))
-                {
-                    currentPitchShift = psVal;
-                }
 
-                if (root.TryGetProperty("originalBpm", out var obProp) && obProp.TryGetDouble(out var obVal) && obVal > 20)
+                // 優先解析結構化 initial
+                if (root.TryGetProperty("initial", out var initObj))
                 {
-                    detectedBpm = obVal;
-                }
-
-                if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
-                {
-                    targetBpm = tbVal;
-                }
-
-                if (root.TryGetProperty("separationMode", out var smProp))
-                {
-                    var smStr = smProp.GetString();
-                    if (Enum.TryParse<SeparationMode>(smStr, true, out var smParsed))
+                    if (initObj.TryGetProperty("bpm", out var ibProp) && ibProp.TryGetDouble(out var ibVal) && ibVal > 20)
                     {
-                        activeMode = smParsed;
+                        initialBpm = ibVal;
                     }
+                    if (initObj.TryGetProperty("key", out var ikProp)) initialKey = ikProp.GetString();
+                    if (initObj.TryGetProperty("keyDisplayName", out var ikdProp)) initialKeyZh = ikdProp.GetString();
+                }
+
+                // 優先解析結構化 saved
+                if (root.TryGetProperty("saved", out var savedObj))
+                {
+                    if (savedObj.TryGetProperty("tempo", out var tempoObj))
+                    {
+                        if (tempoObj.TryGetProperty("lastModifiedBpm", out var lmbProp) && lmbProp.TryGetDouble(out var lmbVal) && lmbVal > 20)
+                        {
+                            detectedBpm = lmbVal;
+                            targetBpm = lmbVal;
+                        }
+                        else if (tempoObj.TryGetProperty("originalBpm", out var sobProp) && sobProp.TryGetDouble(out var sobVal) && sobVal > 20)
+                        {
+                            detectedBpm = sobVal;
+                            targetBpm = sobVal;
+                        }
+                    }
+                    if (savedObj.TryGetProperty("pitch", out var pitchObj))
+                    {
+                        if (pitchObj.TryGetProperty("pitchShiftSemitones", out var psProp) && psProp.TryGetInt32(out var psVal))
+                        {
+                            currentPitchShift = psVal;
+                        }
+                        if (pitchObj.TryGetProperty("originalKey", out var sokProp)) detectedKey = sokProp.GetString() ?? detectedKey;
+                        if (pitchObj.TryGetProperty("originalKeyDisplayName", out var sokdProp)) detectedKeyZh = sokdProp.GetString() ?? detectedKeyZh;
+                    }
+                    if (savedObj.TryGetProperty("separationMode", out var smProp))
+                    {
+                        var smStr = smProp.GetString();
+                        if (Enum.TryParse<SeparationMode>(smStr, true, out var smParsed)) activeMode = smParsed;
+                    }
+                }
+
+                // 向後相容頂層欄位
+                if (root.TryGetProperty("pitchShift", out var topPsProp) && topPsProp.TryGetInt32(out var topPsVal))
+                {
+                    currentPitchShift = topPsVal;
+                }
+                if (root.TryGetProperty("originalBpm", out var topObProp) && topObProp.TryGetDouble(out var topObVal) && topObVal > 20)
+                {
+                    detectedBpm = topObVal;
+                }
+                if (root.TryGetProperty("targetBpm", out var topTbProp) && topTbProp.TryGetDouble(out var topTbVal) && topTbVal > 20)
+                {
+                    targetBpm = topTbVal;
+                }
+                if (root.TryGetProperty("separationMode", out var topSmProp))
+                {
+                    var smStr = topSmProp.GetString();
+                    if (Enum.TryParse<SeparationMode>(smStr, true, out var smParsed)) activeMode = smParsed;
                 }
             }
             catch { }
         }
+
+        if (!initialBpm.HasValue && detectedBpm.HasValue) initialBpm = detectedBpm;
+        if (string.IsNullOrEmpty(initialKey)) initialKey = detectedKey;
+        if (string.IsNullOrEmpty(initialKeyZh)) initialKeyZh = detectedKeyZh;
 
         // 以最新時間點的變速目錄掛載音軌
         if (latestTempoDir != null && latestTempoBpm.HasValue)
@@ -457,8 +526,11 @@ public sealed class DagOrchestrator
             ReaperRppUrl = rppUrl,
             DetectedKey = detectedKey,
             DetectedKeyDisplayName = detectedKeyZh,
+            InitialKey = initialKey,
+            InitialKeyDisplayName = initialKeyZh,
             CurrentPitchShift = currentPitchShift,
             DetectedBpm = detectedBpm,
+            InitialBpm = initialBpm,
             CurrentTempoRatio = currentTempoRatio,
             TargetBpm = targetBpm,
             ProjectStateJson = projectStateJson,
@@ -565,8 +637,12 @@ public sealed class DagOrchestrator
             var (k, d) = await _cliRunner.DetectAudioKeyAsync(sourceWavPath, ct);
             result.DetectedKey = k;
             result.DetectedKeyDisplayName = d;
+            result.InitialKey = k;
+            result.InitialKeyDisplayName = d;
             string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
             await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key = k, displayName = d }), ct);
+            string initKeyPath = Path.Combine(jobDir, "initial_key.json");
+            if (!File.Exists(initKeyPath)) await File.WriteAllTextAsync(initKeyPath, JsonSerializer.Serialize(new { key = k, displayName = d }), ct);
         }
         catch { }
 
@@ -576,8 +652,11 @@ public sealed class DagOrchestrator
             result.DetectedBpm = bpm;
             result.CurrentTempoRatio = 1.0;
             result.TargetBpm = bpm;
+            result.InitialBpm = bpm;
             string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
             await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm }), ct);
+            string initBpmPath = Path.Combine(jobDir, "initial_bpm.json");
+            if (!File.Exists(initBpmPath)) await File.WriteAllTextAsync(initBpmPath, JsonSerializer.Serialize(new { bpm }), ct);
         }
         catch { }
 
@@ -1592,62 +1671,135 @@ public sealed class DagOrchestrator
         {
             job.ProjectStateJson = trackStatesJson;
 
-            // 解析並同步更新記憶體中的模式、變調與拍速
             try
             {
                 using var doc = JsonDocument.Parse(trackStatesJson);
                 var root = doc.RootElement;
-                if (root.TryGetProperty("separationMode", out var smProp))
+
+                // 1. 取得分離模式
+                string? modeStr = null;
+                if (root.TryGetProperty("saved", out var savedObj) && savedObj.TryGetProperty("separationMode", out var ssmProp))
                 {
-                    var smStr = smProp.GetString();
-                    if (Enum.TryParse<SeparationMode>(smStr, true, out var parsedMode))
+                    modeStr = ssmProp.GetString();
+                }
+                else if (root.TryGetProperty("separationMode", out var smProp))
+                {
+                    modeStr = smProp.GetString();
+                }
+                if (!string.IsNullOrEmpty(modeStr) && Enum.TryParse<SeparationMode>(modeStr, true, out var parsedMode))
+                {
+                    job.ActiveMode = parsedMode;
+                    string modeJsonPath = Path.Combine(jobDir, "separation_mode.json");
+                    await File.WriteAllTextAsync(modeJsonPath, JsonSerializer.Serialize(new { mode = parsedMode.ToString() }), ct);
+                }
+
+                // 2. 取得變調與原調
+                int? pitchVal = null;
+                string? origKeyStr = null;
+                string? origKeyZhStr = null;
+                if (root.TryGetProperty("saved", out var savedPitchObj) && savedPitchObj.TryGetProperty("pitch", out var pitchProp))
+                {
+                    if (pitchProp.TryGetProperty("pitchShiftSemitones", out var psProp) && psProp.TryGetInt32(out var ps)) pitchVal = ps;
+                    if (pitchProp.TryGetProperty("originalKey", out var okProp)) origKeyStr = okProp.GetString();
+                    if (pitchProp.TryGetProperty("originalKeyDisplayName", out var okdProp)) origKeyZhStr = okdProp.GetString();
+                }
+                if (!pitchVal.HasValue)
+                {
+                    if (root.TryGetProperty("pitchShift", out var psProp) && psProp.TryGetInt32(out var ps)) pitchVal = ps;
+                    else if (root.TryGetProperty("appliedPitchShift", out var apsProp) && apsProp.TryGetInt32(out var aps)) pitchVal = aps;
+                }
+                if (string.IsNullOrEmpty(origKeyStr))
+                {
+                    if (root.TryGetProperty("detectedKey", out var dkProp)) origKeyStr = dkProp.GetString();
+                    if (root.TryGetProperty("detectedKeyDisplayName", out var dkdProp)) origKeyZhStr = dkdProp.GetString();
+                }
+                if (pitchVal.HasValue) job.CurrentPitchShift = pitchVal.Value;
+                if (!string.IsNullOrEmpty(origKeyStr))
+                {
+                    job.DetectedKey = origKeyStr;
+                    if (!string.IsNullOrEmpty(origKeyZhStr)) job.DetectedKeyDisplayName = origKeyZhStr;
+                    string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
+                    await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key = origKeyStr, displayName = origKeyZhStr ?? origKeyStr }), ct);
+                }
+
+                // 3. 取得最新 BPM (原速 / 變更後 BPM)
+                double? newBpmVal = null;
+                if (root.TryGetProperty("saved", out var savedTempoObj) && savedTempoObj.TryGetProperty("tempo", out var tempoProp))
+                {
+                    if (tempoProp.TryGetProperty("lastModifiedBpm", out var lmbProp) && lmbProp.TryGetDouble(out var lmbVal) && lmbVal > 20)
                     {
-                        job.ActiveMode = parsedMode;
-                        string modeJsonPath = Path.Combine(jobDir, "separation_mode.json");
-                        await File.WriteAllTextAsync(modeJsonPath, JsonSerializer.Serialize(new { mode = parsedMode.ToString() }), ct);
+                        newBpmVal = Math.Round(lmbVal, 1);
+                    }
+                    else if (tempoProp.TryGetProperty("originalBpm", out var sobProp) && sobProp.TryGetDouble(out var sobVal) && sobVal > 20)
+                    {
+                        newBpmVal = Math.Round(sobVal, 1);
+                    }
+                    else if (tempoProp.TryGetProperty("targetBpm", out var stbProp) && stbProp.TryGetDouble(out var stbVal) && stbVal > 20)
+                    {
+                        newBpmVal = Math.Round(stbVal, 1);
                     }
                 }
-
-                if (root.TryGetProperty("pitchShift", out var psProp) && psProp.TryGetInt32(out var psVal))
+                if (!newBpmVal.HasValue)
                 {
-                    job.CurrentPitchShift = psVal;
+                    if (root.TryGetProperty("originalBpm", out var obProp) && obProp.TryGetDouble(out var obVal) && obVal > 20) newBpmVal = Math.Round(obVal, 1);
+                    else if (root.TryGetProperty("currentBpm", out var cbProp) && cbProp.TryGetDouble(out var cbVal) && cbVal > 20) newBpmVal = Math.Round(cbVal, 1);
+                    else if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20) newBpmVal = Math.Round(tbVal, 1);
                 }
-                else if (root.TryGetProperty("appliedPitchShift", out var apsProp) && apsProp.TryGetInt32(out var apsVal))
-                {
-                    job.CurrentPitchShift = apsVal;
-                }
-
-                double? newBpmVal = null;
-                if (root.TryGetProperty("originalBpm", out var obProp) && obProp.TryGetDouble(out var obVal) && obVal > 20)
-                {
-                    newBpmVal = Math.Round(obVal, 1);
-                }
-                else if (root.TryGetProperty("currentBpm", out var cbProp) && cbProp.TryGetDouble(out var cbVal) && cbVal > 20)
-                {
-                    newBpmVal = Math.Round(cbVal, 1);
-                }
-                else if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
-                {
-                    newBpmVal = Math.Round(tbVal, 1);
-                }
-
                 if (newBpmVal.HasValue)
                 {
                     job.DetectedBpm = newBpmVal.Value;
                     job.TargetBpm = newBpmVal.Value;
                     job.CurrentTempoRatio = 1.0;
-
                     string bpmJsonPath = Path.Combine(jobDir, "detected_bpm.json");
-                    try
+                    await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm = newBpmVal.Value }), ct);
+                }
+
+                // 4. 取得 trackOrder 並寫入 track_order.json
+                JsonElement? orderEl = null;
+                if (root.TryGetProperty("saved", out var savedOrderObj) && savedOrderObj.TryGetProperty("trackOrder", out var soEl) && soEl.ValueKind == JsonValueKind.Array)
+                {
+                    orderEl = soEl;
+                }
+                else if (root.TryGetProperty("trackOrder", out var toEl) && toEl.ValueKind == JsonValueKind.Array)
+                {
+                    orderEl = toEl;
+                }
+                if (orderEl.HasValue)
+                {
+                    var orderList = new List<string>();
+                    foreach (var item in orderEl.Value.EnumerateArray())
                     {
-                        await File.WriteAllTextAsync(bpmJsonPath, JsonSerializer.Serialize(new { bpm = newBpmVal.Value }), ct);
+                        var s = item.GetString();
+                        if (!string.IsNullOrEmpty(s)) orderList.Add(s);
                     }
-                    catch { }
+                    if (orderList.Count > 0)
+                    {
+                        string orderJsonPath = Path.Combine(jobDir, "track_order.json");
+                        await File.WriteAllTextAsync(orderJsonPath, JsonSerializer.Serialize(orderList, new JsonSerializerOptions { WriteIndented = true }), ct);
+                    }
+                }
+
+                // 5. 提取 trackStates 中各軌 offsetSec 並寫入 track_offsets.json
+                if (root.TryGetProperty("trackStates", out var tsEl) && tsEl.ValueKind == JsonValueKind.Object)
+                {
+                    var offsetsDict = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var prop in tsEl.EnumerateObject())
+                    {
+                        if (prop.Value.TryGetProperty("offsetSec", out var offProp) && offProp.TryGetDouble(out var offVal))
+                        {
+                            offsetsDict[prop.Name] = offVal;
+                        }
+                    }
+                    if (offsetsDict.Count > 0)
+                    {
+                        string offsetsJsonPath = Path.Combine(jobDir, "track_offsets.json");
+                        await File.WriteAllTextAsync(offsetsJsonPath, JsonSerializer.Serialize(offsetsDict, new JsonSerializerOptions { WriteIndented = true }), ct);
+                    }
                 }
             }
             catch { }
 
-            // 同步更新最新 Reaper 工程檔 (.rpp)
+            // 6. 同步更新最新 Reaper 工程檔 (.rpp)
             try
             {
                 string rppFileName = $"{Path.GetFileNameWithoutExtension(job.OriginalFileName)}_StemForge.rpp";

@@ -109,6 +109,9 @@ public sealed record SeparationJobResult
     public string? DetectedKeyDisplayName { get; set; }
     public int CurrentPitchShift { get; set; } = 0;
     public double? DetectedBpm { get; set; }
+    public double? InitialBpm { get; set; }
+    public string? InitialKey { get; set; }
+    public string? InitialKeyDisplayName { get; set; }
     public double CurrentTempoRatio { get; set; } = 1.0;
     public double? TargetBpm { get; set; }
     public string? ProjectStateJson { get; set; }

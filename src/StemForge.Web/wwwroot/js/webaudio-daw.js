@@ -841,53 +841,80 @@ class StemForgeDawApp {
       } catch { }
     }
 
+    const savedState = earlyProjectState?.saved || {};
+    const initState = earlyProjectState?.initial || {};
+
     // 1. 還原分離模式 (Separation Mode)
     let activeMode = "BitAccurateResidual";
-    if (jobResult.activeMode !== undefined && jobResult.activeMode !== null) {
+    if (savedState.separationMode) {
+      activeMode = savedState.separationMode;
+    } else if (earlyProjectState?.separationMode) {
+      activeMode = earlyProjectState.separationMode;
+    } else if (jobResult.activeMode !== undefined && jobResult.activeMode !== null) {
       activeMode = typeof jobResult.activeMode === "number"
         ? (["BitAccurateResidual", "BitAccurateProportional", "PureIsolation", "AiTrainingDry"][jobResult.activeMode] || "BitAccurateResidual")
         : String(jobResult.activeMode);
-    } else if (earlyProjectState && earlyProjectState.separationMode) {
-      activeMode = earlyProjectState.separationMode;
     }
     if (this.modeSelect) {
       this.modeSelect.value = activeMode;
     }
 
     // 2. 還原原調與變調狀態 (Pitch Shift)
-    const detectedKeyDisplay = jobResult.detectedKeyDisplayName || jobResult.detectedKey || "C 大調 (C Major)";
+    const detectedKeyDisplay = savedState.pitch?.originalKeyDisplayName || earlyProjectState?.detectedKeyDisplayName || jobResult.detectedKeyDisplayName || jobResult.detectedKey || "D 大調 (D Major)";
+    const detectedKey = savedState.pitch?.originalKey || earlyProjectState?.detectedKey || jobResult.detectedKey || "D Major";
+    jobResult.detectedKey = detectedKey;
+    jobResult.detectedKeyDisplayName = detectedKeyDisplay;
+
     if (this.detectedKeyBadge) {
       this.detectedKeyBadge.innerHTML = `原調: ${detectedKeyDisplay} ▾ <span style="font-size: 10px; color: #38bdf8;">[點擊修改]</span>`;
     }
-    if (this.keyOverrideSelect && jobResult.detectedKey) {
-      const matchOpt = Array.from(this.keyOverrideSelect.options).find(o => o.value.startsWith(jobResult.detectedKey + "|"));
+    if (this.keyOverrideSelect && detectedKey) {
+      const matchOpt = Array.from(this.keyOverrideSelect.options).find(o => o.value.startsWith(detectedKey + "|"));
       if (matchOpt) this.keyOverrideSelect.value = matchOpt.value;
     }
 
     let savedPitch = 0;
-    if (typeof jobResult.currentPitchShift === "number") {
-      savedPitch = jobResult.currentPitchShift;
+    if (savedState.pitch && typeof savedState.pitch.pitchShiftSemitones === "number") {
+      savedPitch = savedState.pitch.pitchShiftSemitones;
     } else if (earlyProjectState && typeof earlyProjectState.pitchShift === "number") {
       savedPitch = earlyProjectState.pitchShift;
+    } else if (typeof jobResult.currentPitchShift === "number") {
+      savedPitch = jobResult.currentPitchShift;
     }
+    jobResult.currentPitchShift = savedPitch;
     if (this.pitchShiftSlider) {
       this.pitchShiftSlider.value = savedPitch;
     }
     this.updatePitchUiOnly(savedPitch);
 
-    // 3. 還原拍速狀態 (BPM)
-    const bpmVal = jobResult.detectedBpm
-      ? Math.round(jobResult.detectedBpm)
-      : (this.currentBpm && this.currentBpm > 30 ? this.currentBpm : (this.originalBpm || 120));
+    // 3. 還原拍速狀態 (BPM)：依使用者核心邏輯，存檔記錄的原速/最後修改速度為最高依據
+    let bpmVal = 120;
+    if (savedState.tempo?.originalBpm && savedState.tempo.originalBpm > 20) {
+      bpmVal = Math.round(savedState.tempo.originalBpm);
+    } else if (earlyProjectState?.originalBpm && earlyProjectState.originalBpm > 20) {
+      bpmVal = Math.round(earlyProjectState.originalBpm);
+    } else if (jobResult.detectedBpm && jobResult.detectedBpm > 20) {
+      bpmVal = Math.round(jobResult.detectedBpm);
+    } else if (this.currentBpm && this.currentBpm > 30) {
+      bpmVal = this.currentBpm;
+    } else if (this.originalBpm) {
+      bpmVal = this.originalBpm;
+    }
     this.originalBpm = bpmVal;
+    jobResult.detectedBpm = bpmVal;
 
     let targetBpm = bpmVal;
-    if (typeof jobResult.targetBpm === "number" && jobResult.targetBpm > 20) {
-      targetBpm = Math.round(jobResult.targetBpm);
-    } else if (earlyProjectState && typeof earlyProjectState.targetBpm === "number" && earlyProjectState.targetBpm > 20) {
+    if (savedState.tempo?.lastModifiedBpm && savedState.tempo.lastModifiedBpm > 20) {
+      targetBpm = Math.round(savedState.tempo.lastModifiedBpm);
+    } else if (savedState.tempo?.targetBpm && savedState.tempo.targetBpm > 20) {
+      targetBpm = Math.round(savedState.tempo.targetBpm);
+    } else if (earlyProjectState?.targetBpm && earlyProjectState.targetBpm > 20) {
       targetBpm = Math.round(earlyProjectState.targetBpm);
+    } else if (typeof jobResult.targetBpm === "number" && jobResult.targetBpm > 20) {
+      targetBpm = Math.round(jobResult.targetBpm);
     }
     this.currentBpm = targetBpm;
+    jobResult.targetBpm = targetBpm;
 
     if (this.detectedBpmBadge) {
       this.detectedBpmBadge.innerHTML = `原速: ${bpmVal} BPM <span style="font-size: 10px; color: #34d399;">[點擊修改]</span>`;
@@ -1036,8 +1063,11 @@ class StemForgeDawApp {
 
     this.updateTrackGains();
 
-    if (projectState && typeof projectState.leadTrimSec === "number" && projectState.leadTrimSec > 0) {
-      this.applyLeadTrim(projectState.leadTrimSec, false);
+    const savedLeadTrim = projectState?.saved?.leadTrim?.leadTrimSec !== undefined
+      ? projectState.saved.leadTrim.leadTrimSec
+      : (projectState && typeof projectState.leadTrimSec === "number" ? projectState.leadTrimSec : 0);
+    if (savedLeadTrim > 0) {
+      this.applyLeadTrim(savedLeadTrim, false);
     } else {
       this.applyLeadTrim(0, false);
     }
@@ -1565,6 +1595,7 @@ class StemForgeDawApp {
     this.initTrackRowDragAndDrop(track, row);
 
     this.mixerTracksContainer.appendChild(row);
+    this.updateTrackOffsetDisplay(track);
   }
 
   moveTrack(track, direction) {
@@ -3201,28 +3232,77 @@ class StemForgeDawApp {
           endSec: Number(r.endSec.toFixed(3)),
           muted: !!r.muted
         })),
-        volume: t.volume,
-        pan: t.pan,
+        volume: typeof t.volume === "number" ? Number(t.volume.toFixed(2)) : 1.0,
+        pan: typeof t.pan === "number" ? Number(t.pan.toFixed(2)) : 0.0,
         mute: !!t.mute,
         solo: !!t.solo,
         invertPhase: !!t.invertPhase,
-        offsetSec: typeof t.offsetSec === "number" ? t.offsetSec : 0.0
+        offsetSec: typeof t.offsetSec === "number" ? Number(t.offsetSec.toFixed(4)) : 0.0
       };
     }
+
     const currentMode = this.modeSelect ? this.modeSelect.value : (this.currentJob?.activeMode || "BitAccurateResidual");
     const curPitch = this.pitchShiftSlider ? parseInt(this.pitchShiftSlider.value, 10) : (this.currentJob?.currentPitchShift || 0);
     const curBpm = this.tempoSlider ? parseInt(this.tempoSlider.value, 10) : (this.currentBpm || this.originalBpm || 120);
+    const origBpm = this.originalBpm || (this.currentJob?.detectedBpm ? Math.round(this.currentJob.detectedBpm) : curBpm);
+    const initialBpm = this.currentJob?.initialBpm || origBpm;
+
+    const origKey = this.currentJob?.detectedKey || "D Major";
+    const origKeyDisplay = this.currentJob?.detectedKeyDisplayName || "D 大調 (D Major)";
+    const initialKey = this.currentJob?.initialKey || origKey;
+    const initialKeyDisplay = this.currentJob?.initialKeyDisplayName || origKeyDisplay;
+
+    const leadTrimSec = typeof this.leadTrimSec === "number" ? Number(this.leadTrimSec.toFixed(4)) : 0.0;
+    const isLeadTrimmed = leadTrimSec > 0;
+    const trackOrder = this.tracks.map(t => t.nodeId);
 
     return {
+      version: 2,
       updatedAt: new Date().toISOString(),
-      leadTrimSec: this.leadTrimSec || 0,
-      separationMode: currentMode,
-      pitchShift: curPitch,
-      appliedPitchShift: this.currentJob ? (this.currentJob.currentPitchShift || 0) : curPitch,
+      projectId: this.currentJob?.jobId || "",
+      projectName: this.currentJob?.originalFileName || "",
+      // 1. 原始規格 (初次偵測基準)
+      initial: {
+        bpm: initialBpm,
+        key: initialKey,
+        keyDisplayName: initialKeyDisplay
+      },
+      // 2. 存檔時最後狀態 (原調、變調、原速、變更後最後BPM、開頭切齊、分離模式、排序)
+      saved: {
+        tempo: {
+          originalBpm: origBpm,
+          lastModifiedBpm: curBpm,
+          targetBpm: curBpm,
+          tempoRatio: origBpm > 0 ? Number((curBpm / origBpm).toFixed(4)) : 1.0
+        },
+        pitch: {
+          originalKey: origKey,
+          originalKeyDisplayName: origKeyDisplay,
+          targetKey: curPitch === 0 ? origKeyDisplay : this.calcTransposedKey(origKey, curPitch),
+          pitchShiftSemitones: curPitch
+        },
+        leadTrim: {
+          isLeadTrimmed: isLeadTrimmed,
+          leadTrimSec: leadTrimSec
+        },
+        separationMode: currentMode,
+        trackOrder: trackOrder
+      },
+      // 3. 各軌道詳細編輯狀態 (音量、Pan、靜音、獨奏、反相、微調毫秒、切割區塊)
+      trackStates,
+      // 向後相容頂層欄位
+      originalBpm: origBpm,
       targetBpm: curBpm,
-      currentBpm: this.currentBpm || curBpm,
-      appliedTempoRatio: this.currentJob ? (this.currentJob.currentTempoRatio || 1.0) : 1.0,
-      trackStates
+      currentBpm: curBpm,
+      appliedTempoRatio: origBpm > 0 ? Number((curBpm / origBpm).toFixed(4)) : 1.0,
+      pitchShift: curPitch,
+      appliedPitchShift: this.currentJob?.currentPitchShift ?? curPitch,
+      detectedKey: origKey,
+      detectedKeyDisplayName: origKeyDisplay,
+      leadTrimSec: leadTrimSec,
+      isLeadTrimmed: isLeadTrimmed,
+      separationMode: currentMode,
+      trackOrder: trackOrder
     };
   }
 
