@@ -1158,7 +1158,7 @@ app.MapGet("/api/projects/history", (DagOrchestrator orchestrator) =>
 // 9. 載入指定歷史分軌專案完整資料進 DAW
 app.MapGet("/api/projects/{jobId}/load", async (string jobId, DagOrchestrator orchestrator, CancellationToken ct) =>
 {
-    var job = orchestrator.GetJobResult(jobId);
+    var job = orchestrator.TryRestoreJobFromDisk(jobId) ?? orchestrator.GetJobResult(jobId);
     if (job == null) return Results.NotFound(new { error = "找不到該歷史專案" });
 
     if (job.DetectedBpm == null && File.Exists(job.SourceAudioPath))
