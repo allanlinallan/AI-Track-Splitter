@@ -974,14 +974,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
     string stemsDir = Path.Combine(jobDir, "stems");
     string rawStemsDir = Path.Combine(jobDir, "raw_stems");
 
-    if (!Directory.Exists(rawStemsDir))
-    {
-        Directory.CreateDirectory(rawStemsDir);
-        foreach (var wav in Directory.GetFiles(stemsDir, "*.wav"))
-        {
-            File.Copy(wav, Path.Combine(rawStemsDir, Path.GetFileName(wav)), true);
-        }
-    }
+    StandardizeProjectStems(jobDir);
 
     if (semitones == 0)
     {
@@ -1614,21 +1607,46 @@ static string FindProjectRoot()
 
 app.Run();
 
-static void CleanOldTransientDirs(string jobDir)
+static void StandardizeProjectStems(string jobDir)
 {
     try
     {
-        foreach (var d in Directory.GetDirectories(jobDir, "tempo_*"))
+        string stemsDir = Path.Combine(jobDir, "stems");
+        string rawStemsDir = Path.Combine(jobDir, "raw_stems");
+        Directory.CreateDirectory(stemsDir);
+        Directory.CreateDirectory(rawStemsDir);
+
+        // 1. 清理舊 transient 暫存目錄
+        foreach (var d in Directory.GetDirectories(jobDir, "tempo_*").Concat(Directory.GetDirectories(jobDir, "pitch_*")))
         {
             try { Directory.Delete(d, true); } catch { }
         }
-        foreach (var d in Directory.GetDirectories(jobDir, "pitch_*"))
+
+        // 2. 清理 stems 與 raw_stems 裡的大寫 STEM_* 別名
+        foreach (var f in Directory.GetFiles(stemsDir, "STEM_*.wav"))
         {
-            try { Directory.Delete(d, true); } catch { }
+            try { File.Delete(f); } catch { }
+        }
+        foreach (var f in Directory.GetFiles(rawStemsDir, "STEM_*.wav"))
+        {
+            try { File.Delete(f); } catch { }
+        }
+
+        // 3. 確保 raw_stems 擁有與 stems 一致的純淨母本 (若 raw 缺少某軌則從 stems 同步)
+        foreach (var f in Directory.GetFiles(stemsDir, "*.wav"))
+        {
+            string fn = Path.GetFileName(f);
+            string rawFile = Path.Combine(rawStemsDir, fn);
+            if (!File.Exists(rawFile))
+            {
+                try { File.Copy(f, rawFile, true); } catch { }
+            }
         }
     }
     catch { }
 }
+
+void CleanOldTransientDirs(string jobDir) => StandardizeProjectStems(jobDir);
 
 static void UpdateProjectStateJson(string jobDir, Action<System.Text.Json.Nodes.JsonNode> updater)
 {

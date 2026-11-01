@@ -186,6 +186,12 @@ public sealed class DagOrchestrator
             }
         }
 
+        // 自動清理歷史別名重複檔案 (STEM_*.wav)
+        foreach (var f in Directory.GetFiles(stemsDir, "STEM_*.wav")) { try { File.Delete(f); } catch { } }
+        if (Directory.Exists(rawStemsDir)) {
+            foreach (var f in Directory.GetFiles(rawStemsDir, "STEM_*.wav")) { try { File.Delete(f); } catch { } }
+        }
+
         var stemFiles = Directory.GetFiles(stemsDir, "*.wav");
         if (stemFiles.Length == 0) return null;
 
@@ -779,7 +785,10 @@ public sealed class DagOrchestrator
                 customPrompts.Add(stem.NodeId[StemNodeIds.CustomAudioSepPrefix.Length..].ToLowerInvariant());
             }
 
-            string rawPath = Path.Combine(rawStemsDir, $"{stem.NodeId}.wav");
+            string fn = Path.GetFileName(stem.FilePath);
+            string rawPath = Path.Combine(rawStemsDir, fn);
+            if (!File.Exists(rawPath))
+                rawPath = Path.Combine(rawStemsDir, $"{stem.NodeId}.wav");
             if (!File.Exists(rawPath) && File.Exists(stem.FilePath))
                 rawPath = stem.FilePath;
 
