@@ -1115,20 +1115,24 @@ class StemForgeDawApp {
         ${meta.isOriginalReference ? "" : `<button class="btn-track-remove" title="刪除此音軌 (從工程與混音器中移除)">✕</button>`}
       </div>
       <div class="track-controls">
-        <button class="m-btn solo ${track.solo ? "active" : ""}" title="Solo 獨奏此軌 (對比原曲)">S</button>
-        <button class="m-btn mute ${track.mute ? "active" : ""}" title="Mute 靜音此軌">M</button>
-        <button class="m-btn invert ${track.invertPhase ? "active" : ""}" title="Phase Invert 180° 反相 (即時反相測試)">Ø</button>
-        <div class="fader-wrap">
-          <input type="range" class="vol-slider" min="0" max="4.0" step="0.02" value="${track.volume ?? 1.0}" title="音量推子: 0.0 dB (100%)" />
-          <input type="range" class="pan-slider" min="-1" max="1" step="0.05" value="${track.pan ?? 0.0}" title="立體聲 Pan (L/R)" />
+        <div class="track-controls-btns">
+          <button class="m-btn solo ${track.solo ? "active" : ""}" title="Solo 獨奏此軌 (對比原曲)">S</button>
+          <button class="m-btn mute ${track.mute ? "active" : ""}" title="Mute 靜音此軌">M</button>
+          <button class="m-btn invert ${track.invertPhase ? "active" : ""}" title="Phase Invert 180° 反相 (即時反相測試)">Ø</button>
         </div>
-        ${meta.isOriginalReference ? "" : `
-        <div class="track-nudge-widget" title="平移對齊微調：點擊 ◀ 提前 10ms，點擊 ▶ 延後 10ms (Shift: 1ms, Ctrl: 50ms) / 雙擊歸零">
-          <button class="btn-nudge-step btn-nudge-left" title="提前 10ms (Shift: 1ms, Ctrl: 50ms)">◀</button>
-          <span class="nudge-val-badge" title="目前平移量 (雙擊歸零)">0ms</span>
-          <button class="btn-nudge-step btn-nudge-right" title="延後 10ms (Shift: 1ms, Ctrl: 50ms)">▶</button>
+        <div class="track-controls-sliders">
+          <div class="fader-wrap">
+            <input type="range" class="vol-slider" min="0" max="4.0" step="0.02" value="${track.volume ?? 1.0}" title="音量推子: 0.0 dB (100%)" />
+            <input type="range" class="pan-slider" min="-1" max="1" step="0.05" value="${track.pan ?? 0.0}" title="立體聲 Pan (L/R)" />
+          </div>
+          ${meta.isOriginalReference ? "" : `
+          <div class="track-nudge-widget" title="平移對齊微調：點擊 ◀ 提前 10ms，點擊 ▶ 延後 10ms (Shift: 1ms, Ctrl: 50ms) / 雙擊歸零">
+            <button class="btn-nudge-step btn-nudge-left" title="提前 10ms (Shift: 1ms, Ctrl: 50ms)">◀</button>
+            <span class="nudge-val-badge" title="目前平移量 (點擊手動輸入 / 雙擊歸零)">0ms</span>
+            <button class="btn-nudge-step btn-nudge-right" title="延後 10ms (Shift: 1ms, Ctrl: 50ms)">▶</button>
+          </div>
+          `}
         </div>
-        `}
       </div>
       <div class="track-waveform-wrap">
         <canvas class="track-waveform-canvas" height="58"></canvas>
@@ -4199,7 +4203,14 @@ class StemForgeDawApp {
         }
         const pct = (this.leadTrimSec / this.durationSec) * 100;
         overlay.style.width = `${pct}%`;
-        overlay.innerHTML = `<span class="lead-trim-badge">🚩 起點 [-${this.leadTrimSec.toFixed(2)}s]</span>`;
+        overlay.title = `🚩 起點對齊 [-${this.leadTrimSec.toFixed(2)}s] (已自動切齊開頭靜音)`;
+        const wrapWidth = wrap.clientWidth || 300;
+        const pixelWidth = (pct / 100) * wrapWidth;
+        if (pixelWidth >= 68) {
+          overlay.innerHTML = `<span class="lead-trim-badge">🚩 起點 [-${this.leadTrimSec.toFixed(2)}s]</span>`;
+        } else {
+          overlay.innerHTML = "";
+        }
       } else if (overlay) {
         overlay.remove();
       }

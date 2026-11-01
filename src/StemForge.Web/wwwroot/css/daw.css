@@ -1214,7 +1214,7 @@ body {
 
 .track-row {
   display: grid;
-  grid-template-columns: 285px 290px 1fr 140px;
+  grid-template-columns: 285px 210px 1fr 140px;
   grid-template-rows: 58px;
   align-items: stretch;
   background: var(--bg-track);
@@ -1300,16 +1300,33 @@ body {
 .track-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0 8px;
   border-right: 1px solid #1e293b;
   height: 58px;
-  overflow: visible;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.track-controls-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.track-controls-sliders {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
 }
 
 .m-btn {
-  width: 25px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
   border-radius: 4px;
   border: 1px solid #475569;
   background: #0f172a;
@@ -1318,6 +1335,9 @@ body {
   font-size: 11px;
   cursor: pointer;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .m-btn:hover {
@@ -1346,17 +1366,16 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  flex: 1;
-  gap: 5px;
-  min-width: 50px;
-  max-width: 85px;
+  gap: 3px;
+  width: 100%;
 }
 
 .fader-wrap input[type="range"] {
   width: 100%;
-  height: 5px;
+  height: 4.5px;
   accent-color: #3b82f6;
   cursor: pointer;
+  margin: 0;
 }
 
 .track-waveform-wrap {
@@ -1651,13 +1670,14 @@ body {
     rgba(30, 41, 59, 0.88) 16px
   );
   border-right: 2px dashed #10b981;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 15;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 6px;
+  padding-right: 4px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .lead-trim-badge {
@@ -2216,14 +2236,18 @@ body.tool-mode-drag .track-waveform-wrap:active {
 
 /* 音軌微調步進器 (Track Nudge Widget) */
 .track-nudge-widget {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid #334155;
   border-radius: 4px;
   padding: 1px 3px;
-  margin-left: 2px;
+  user-select: none;
+  height: 18px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .btn-nudge-step {
@@ -2231,10 +2255,11 @@ body.tool-mode-drag .track-waveform-wrap:active {
   border: none;
   color: #94a3b8;
   font-size: 9px;
-  padding: 1px 4px;
+  padding: 0 4px;
+  line-height: 14px;
+  height: 14px;
   cursor: pointer;
   border-radius: 2px;
-  line-height: 1;
   transition: all 0.1s ease;
 }
 
@@ -2242,18 +2267,18 @@ body.tool-mode-drag .track-waveform-wrap:active {
   background: #38bdf8;
   color: #0f172a;
   font-weight: 700;
-  transform: scale(1.1);
 }
 
 .nudge-val-badge {
   color: #38bdf8;
-  font-size: 9.5px;
+  font-size: 9px;
   font-family: Consolas, monospace;
   font-weight: 700;
-  min-width: 36px;
+  min-width: 32px;
   text-align: center;
   cursor: pointer;
-  user-select: none;
+  line-height: 14px;
+  transition: color 0.1s ease;
 }
 
 .nudge-val-badge:hover {
