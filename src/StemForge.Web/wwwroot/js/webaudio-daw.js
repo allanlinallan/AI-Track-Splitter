@@ -771,22 +771,46 @@ class StemForgeDawApp {
     const currentPos = this.getCurrentTimeSec();
     const currentBpm = this.currentBpm || this.originalBpm;
     const currentLeadTrim = this.leadTrimSec;
+    const currentPitch = (this.currentJob && typeof this.currentJob.currentPitchShift === "number")
+      ? this.currentJob.currentPitchShift
+      : (parseInt(this.pitchShiftSlider?.value, 10) || 0);
+    const curKey = this.currentJob?.detectedKey || "";
+    const curKeyZh = this.currentJob?.detectedKeyDisplayName || "";
     this.stopPlayback();
 
-    const res = await fetch(`/api/jobs/${jobId}/mode/${mode}`, { method: "POST" });
-    if (res.ok) {
-      const updated = await res.json();
-      if (!updated.detectedBpm && currentBpm) {
-        updated.detectedBpm = currentBpm;
+    this.showBusyOverlay(
+      "🔄 正在切換分離模式...",
+      `正在重新計算 32-bit Float 音訊矩陣並保持變調狀態 (${currentPitch >= 0 ? "+" : ""}${currentPitch} 半音)...`,
+      20,
+      "🎛️"
+    );
+
+    try {
+      const q = new URLSearchParams();
+      if (currentPitch !== 0) q.set("pitchShift", currentPitch);
+      if (curKey) q.set("key", curKey);
+      if (curKeyZh) q.set("keyDisplayName", curKeyZh);
+
+      const url = `/api/jobs/${jobId}/mode/${mode}` + (q.toString() ? `?${q.toString()}` : "");
+      const res = await fetch(url, { method: "POST" });
+      if (res.ok) {
+        const updated = await res.json();
+        if (!updated.detectedBpm && currentBpm) {
+          updated.detectedBpm = currentBpm;
+        }
+        await this.loadJobIntoMixer(updated);
+        if (currentLeadTrim > 0) {
+          this.applyLeadTrim(currentLeadTrim, false);
+        }
+        if (wasPlaying) {
+          this.seekTo(currentPos);
+          this.startPlayback();
+        }
       }
-      await this.loadJobIntoMixer(updated);
-      if (currentLeadTrim > 0) {
-        this.applyLeadTrim(currentLeadTrim, false);
-      }
-      if (wasPlaying) {
-        this.seekTo(currentPos);
-        this.startPlayback();
-      }
+    } catch (err) {
+      alert("切換分離模式失敗: " + err.message);
+    } finally {
+      this.hideBusyOverlay();
     }
   }
 

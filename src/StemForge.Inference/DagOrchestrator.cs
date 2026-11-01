@@ -715,7 +715,10 @@ public sealed class DagOrchestrator
     public async Task<SeparationJobResult?> SwitchSeparationModeAsync(
         string jobId,
         SeparationMode newMode,
-        Func<ProgressUpdateEvent, Task> onProgress,
+        int? targetPitchShift = null,
+        string? overrideKey = null,
+        string? overrideKeyDisplayName = null,
+        Func<ProgressUpdateEvent, Task>? onProgress = null,
         CancellationToken ct = default)
     {
         var existing = GetJobResult(jobId);
@@ -737,7 +740,7 @@ public sealed class DagOrchestrator
         foreach (var stem in existing.Stems)
         {
             if (stem.NodeId == StemNodeIds.ResidualBitAccurate) continue;
-            if (stem.IsCustomTrack) continue; // 自訂音軌非 AI 生成節點，不參與 raw_stems 殘差計算
+            if (stem.IsCustomTrack) continue; // 自訂軌非 AI 生成節點，不參與 raw_stems 殘差計算
             if (stem.NodeId.StartsWith(StemNodeIds.CustomAudioSepPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 customPrompts.Add(stem.NodeId[StemNodeIds.CustomAudioSepPrefix.Length..].ToLowerInvariant());
@@ -770,14 +773,101 @@ public sealed class DagOrchestrator
             autoMidi: false,
             nodeAudioMap,
             nodeCacheHitMap,
-            onProgress,
+            onProgress ?? (_ => Task.CompletedTask),
             ct);
 
-        // 繼承原任務的 AI 偵測調性、BPM 速度、音高校正與工程狀態，避免切換分離模式時 BPM 與調性丟失
-        updated.DetectedKey = existing.DetectedKey;
-        updated.DetectedKeyDisplayName = existing.DetectedKeyDisplayName;
-        updated.CurrentPitchShift = existing.CurrentPitchShift;
+        // 1. 確保原調不回退：優先使用傳入的校正原調或磁碟上已保存的 detected_key.json
+        string? effectiveKey = overrideKey;
+        string? effectiveKeyZh = overrideKeyDisplayName;
+        string keyJsonPath = Path.Combine(jobDir, "detected_key.json");
+        if (string.IsNullOrEmpty(effectiveKey) && File.Exists(keyJsonPath))
+        {
+            try
+            {
+                using var kDoc = JsonDocument.Parse(File.ReadAllText(keyJsonPath));
+                effectiveKey = kDoc.RootElement.GetProperty("key").GetString();
+                effectiveKeyZh = kDoc.RootElement.GetProperty("displayName").GetString();
+            }
+            catch { }
+        }
+
+        if (string.IsNullOrEmpty(effectiveKey))
+        {
+            effectiveKey = existing.DetectedKey ?? "C Major";
+            effectiveKeyZh = existing.DetectedKeyDisplayName ?? "C 大調 (C Major)";
+        }
+
+        updated.DetectedKey = effectiveKey;
+        updated.DetectedKeyDisplayName = effectiveKeyZh;
+        updated.InitialKey = existing.InitialKey ?? effectiveKey;
+        updated.InitialKeyDisplayName = existing.InitialKeyDisplayName ?? effectiveKeyZh;
+
+        try
+        {
+            await File.WriteAllTextAsync(keyJsonPath, JsonSerializer.Serialize(new { key = effectiveKey, displayName = effectiveKeyZh }), ct);
+        }
+        catch { }
+
+        // 2. 變調狀態繼承與音軌重構：若目前有變調 (如 +3 半音)，必須對新模式產生的 stems 自動執行變調！
+        int effectivePitch = targetPitchShift ?? existing.CurrentPitchShift;
+        if (effectivePitch == 0)
+        {
+            string statePath = Path.Combine(jobDir, "project_state.json");
+            if (File.Exists(statePath))
+            {
+                try
+                {
+                    using var sDoc = JsonDocument.Parse(File.ReadAllText(statePath));
+                    if (sDoc.RootElement.TryGetProperty("saved", out var savedObj) &&
+                        savedObj.TryGetProperty("pitch", out var pitchObj) &&
+                        pitchObj.TryGetProperty("pitchShiftSemitones", out var psProp) &&
+                        psProp.TryGetInt32(out var psVal))
+                    {
+                        effectivePitch = psVal;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        updated.CurrentPitchShift = effectivePitch;
+
+        if (effectivePitch != 0)
+        {
+            string pitchOutDir = Path.Combine(jobDir, $"pitch_{effectivePitch}");
+            Directory.CreateDirectory(pitchOutDir);
+
+            string activeStemsDir = Path.Combine(jobDir, "stems");
+            await _cliRunner.PitchShiftStemsAsync(
+                activeStemsDir,
+                pitchOutDir,
+                effectivePitch,
+                async (pct, msg) =>
+                {
+                    if (onProgress != null)
+                    {
+                        await onProgress(new ProgressUpdateEvent(
+                            jobId, "PITCH_SHIFT", $"切換模式保持變調 ({effectivePitch:+d} 半音)", pct, pct, msg
+                        ));
+                    }
+                },
+                ct);
+
+            foreach (var stem in updated.Stems)
+            {
+                string fn = Path.GetFileName(stem.FilePath);
+                string shiftedFile = Path.Combine(pitchOutDir, fn);
+                if (File.Exists(shiftedFile))
+                {
+                    stem.RelativeUrl = $"/projects/{jobId}/pitch_{effectivePitch}/{fn}";
+                    stem.FilePath = shiftedFile;
+                }
+            }
+        }
+
+        // 3. 繼承 BPM、拍速比率與工程狀態
         updated.DetectedBpm = existing.DetectedBpm;
+        updated.InitialBpm = existing.InitialBpm;
         updated.CurrentTempoRatio = existing.CurrentTempoRatio;
         updated.TargetBpm = existing.TargetBpm;
         updated.ProjectStateJson = existing.ProjectStateJson;
@@ -786,9 +876,35 @@ public sealed class DagOrchestrator
         try
         {
             string modeJsonPath = Path.Combine(jobDir, "separation_mode.json");
-            File.WriteAllText(modeJsonPath, JsonSerializer.Serialize(new { mode = newMode.ToString() }));
+            await File.WriteAllTextAsync(modeJsonPath, JsonSerializer.Serialize(new { mode = newMode.ToString() }), ct);
         }
         catch { }
+
+        // 4. 同步更新磁碟上的 project_state.json (若存在)
+        string pStatePath = Path.Combine(jobDir, "project_state.json");
+        if (File.Exists(pStatePath))
+        {
+            try
+            {
+                var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(pStatePath));
+                if (jsonNode != null)
+                {
+                    if (jsonNode["saved"] != null)
+                    {
+                        jsonNode["saved"]!["separationMode"] = newMode.ToString();
+                        if (jsonNode["saved"]!["pitch"] != null)
+                        {
+                            jsonNode["saved"]!["pitch"]!["originalKey"] = effectiveKey;
+                            jsonNode["saved"]!["pitch"]!["originalKeyDisplayName"] = effectiveKeyZh;
+                            jsonNode["saved"]!["pitch"]!["pitchShiftSemitones"] = effectivePitch;
+                        }
+                    }
+                    await File.WriteAllTextAsync(pStatePath, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), ct);
+                    updated.ProjectStateJson = File.ReadAllText(pStatePath);
+                }
+            }
+            catch { }
+        }
 
         _jobs[jobId] = updated;
         return updated;

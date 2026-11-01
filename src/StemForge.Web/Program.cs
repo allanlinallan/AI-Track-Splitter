@@ -270,6 +270,9 @@ app.MapPost("/api/jobs/separate", async (
 app.MapPost("/api/jobs/{jobId}/mode/{mode}", async (
     string jobId,
     SeparationMode mode,
+    int? pitchShift,
+    string? key,
+    string? keyDisplayName,
     DagOrchestrator orchestrator,
     IHubContext<SeparationHub> hub,
     CancellationToken ct) =>
@@ -277,6 +280,9 @@ app.MapPost("/api/jobs/{jobId}/mode/{mode}", async (
     var updated = await orchestrator.SwitchSeparationModeAsync(
         jobId,
         mode,
+        pitchShift,
+        key,
+        keyDisplayName,
         async progress => await hub.Clients.All.SendAsync("ProgressUpdated", progress, ct),
         ct);
 
