@@ -829,6 +829,32 @@ class StemForgeDawApp {
     document.getElementById("nullCancellationBadge").textContent =
       `Null 誤差: ${jobResult.nullTestCancellationDbFs} dBFS`;
 
+    // 先解析專案儲存狀態 (project_state.json) 以便同時還原模式、音高與速度
+    let earlyProjectState = null;
+    if (jobResult.projectState) {
+      earlyProjectState = jobResult.projectState;
+    } else if (jobResult.projectStateJson) {
+      try {
+        earlyProjectState = typeof jobResult.projectStateJson === "string"
+          ? JSON.parse(jobResult.projectStateJson)
+          : jobResult.projectStateJson;
+      } catch { }
+    }
+
+    // 1. 還原分離模式 (Separation Mode)
+    let activeMode = "BitAccurateResidual";
+    if (jobResult.activeMode !== undefined && jobResult.activeMode !== null) {
+      activeMode = typeof jobResult.activeMode === "number"
+        ? (["BitAccurateResidual", "BitAccurateProportional", "PureIsolation", "AiTrainingDry"][jobResult.activeMode] || "BitAccurateResidual")
+        : String(jobResult.activeMode);
+    } else if (earlyProjectState && earlyProjectState.separationMode) {
+      activeMode = earlyProjectState.separationMode;
+    }
+    if (this.modeSelect) {
+      this.modeSelect.value = activeMode;
+    }
+
+    // 2. 還原原調與變調狀態 (Pitch Shift)
     const detectedKeyDisplay = jobResult.detectedKeyDisplayName || jobResult.detectedKey || "C 大調 (C Major)";
     if (this.detectedKeyBadge) {
       this.detectedKeyBadge.innerHTML = `原調: ${detectedKeyDisplay} ▾ <span style="font-size: 10px; color: #38bdf8;">[點擊修改]</span>`;
@@ -837,38 +863,43 @@ class StemForgeDawApp {
       const matchOpt = Array.from(this.keyOverrideSelect.options).find(o => o.value.startsWith(jobResult.detectedKey + "|"));
       if (matchOpt) this.keyOverrideSelect.value = matchOpt.value;
     }
-    if (this.pitchShiftSlider) {
-      this.pitchShiftSlider.value = 0;
-    }
-    if (this.pitchValueLabel) {
-      this.pitchValueLabel.textContent = "0 半音";
-    }
-    if (this.targetKeyBadge) {
-      this.targetKeyBadge.textContent = "目標: 原調 (0)";
-    }
 
+    let savedPitch = 0;
+    if (typeof jobResult.currentPitchShift === "number") {
+      savedPitch = jobResult.currentPitchShift;
+    } else if (earlyProjectState && typeof earlyProjectState.pitchShift === "number") {
+      savedPitch = earlyProjectState.pitchShift;
+    }
+    if (this.pitchShiftSlider) {
+      this.pitchShiftSlider.value = savedPitch;
+    }
+    this.updatePitchUiOnly(savedPitch);
+
+    // 3. 還原拍速狀態 (BPM)
     const bpmVal = jobResult.detectedBpm
       ? Math.round(jobResult.detectedBpm)
       : (this.currentBpm && this.currentBpm > 30 ? this.currentBpm : (this.originalBpm || 120));
     this.originalBpm = bpmVal;
-    this.currentBpm = bpmVal;
+
+    let targetBpm = bpmVal;
+    if (typeof jobResult.targetBpm === "number" && jobResult.targetBpm > 20) {
+      targetBpm = Math.round(jobResult.targetBpm);
+    } else if (earlyProjectState && typeof earlyProjectState.targetBpm === "number" && earlyProjectState.targetBpm > 20) {
+      targetBpm = Math.round(earlyProjectState.targetBpm);
+    }
+    this.currentBpm = targetBpm;
 
     if (this.detectedBpmBadge) {
       this.detectedBpmBadge.innerHTML = `原速: ${bpmVal} BPM <span style="font-size: 10px; color: #34d399;">[點擊修改]</span>`;
-    }
-    if (this.targetBpmBadge) {
-      this.targetBpmBadge.textContent = "目標: 原速";
     }
     if (this.tempoSlider) {
       const minBpm = Math.max(40, Math.round(bpmVal * 0.6));
       const maxBpm = Math.min(260, Math.round(bpmVal * 1.5));
       this.tempoSlider.min = minBpm;
       this.tempoSlider.max = maxBpm;
-      this.tempoSlider.value = bpmVal;
+      this.tempoSlider.value = targetBpm;
     }
-    if (this.tempoValueLabel) {
-      this.tempoValueLabel.textContent = `${bpmVal} BPM`;
-    }
+    this.updateTempoUiOnly(targetBpm);
 
     if (jobResult.reaperRppUrl) {
       this.btnDownloadRpp.href = jobResult.reaperRppUrl;
@@ -3176,15 +3207,46 @@ class StemForgeDawApp {
         offsetSec: typeof t.offsetSec === "number" ? t.offsetSec : 0.0
       };
     }
+    const currentMode = this.modeSelect ? this.modeSelect.value : (this.currentJob?.activeMode || "BitAccurateResidual");
+    const curPitch = this.pitchShiftSlider ? parseInt(this.pitchShiftSlider.value, 10) : (this.currentJob?.currentPitchShift || 0);
+    const curBpm = this.tempoSlider ? parseInt(this.tempoSlider.value, 10) : (this.currentBpm || this.originalBpm || 120);
+
     return {
       updatedAt: new Date().toISOString(),
       leadTrimSec: this.leadTrimSec || 0,
+      separationMode: currentMode,
+      pitchShift: curPitch,
+      appliedPitchShift: this.currentJob ? (this.currentJob.currentPitchShift || 0) : curPitch,
+      targetBpm: curBpm,
+      currentBpm: this.currentBpm || curBpm,
+      appliedTempoRatio: this.currentJob ? (this.currentJob.currentTempoRatio || 1.0) : 1.0,
       trackStates
     };
   }
 
   async saveCurrentProject() {
     if (!this.currentJob) return;
+
+    // 檢查是否有拉動但未按套用的變速或變調
+    const sliderPitch = this.pitchShiftSlider ? parseInt(this.pitchShiftSlider.value, 10) : 0;
+    const appliedPitch = this.currentJob.currentPitchShift || 0;
+    const sliderBpm = this.tempoSlider ? parseInt(this.tempoSlider.value, 10) : (this.originalBpm || 120);
+    const appliedBpm = Math.round(this.currentBpm || this.currentJob.targetBpm || this.originalBpm || 120);
+
+    if (sliderPitch !== appliedPitch) {
+      const confirmApply = confirm(`檢測到您調整了音高 (${sliderPitch > 0 ? "+" + sliderPitch : sliderPitch} 半音) 但尚未點擊「⚡ 套用變調」。\n\n是否立即執行變調並儲存？\n(按「確定」立即套用神經變調；按「取消」將只儲存當前已生效狀態)`);
+      if (confirmApply) {
+        await this.applyPitchShift(sliderPitch);
+      }
+    }
+
+    if (sliderBpm !== appliedBpm) {
+      const confirmApplyBpm = confirm(`檢測到您調整了拍速 (${sliderBpm} BPM) 但尚未點擊「⚡ 套用新拍速」。\n\n是否立即執行變速並儲存？\n(按「確定」立即套用時間軸變速；按「取消」將只儲存當前已生效狀態)`);
+      if (confirmApplyBpm) {
+        await this.applyTempoShift(sliderBpm);
+      }
+    }
+
     const btn = this.btnSaveProject;
     const oldText = btn ? btn.textContent : "💾 儲存專案";
     if (btn) {
@@ -3993,6 +4055,19 @@ class StemForgeDawApp {
     this.leadTrimSec = Math.max(0, sec);
     if (this.btnResetTrim) {
       this.btnResetTrim.style.display = this.leadTrimSec > 0 ? "inline-block" : "none";
+    }
+    if (this.btnAutoTrimSilence) {
+      if (this.leadTrimSec > 0) {
+        this.btnAutoTrimSilence.innerHTML = `⚡ 已切齊開頭 (-${this.leadTrimSec.toFixed(2)}s)`;
+        this.btnAutoTrimSilence.style.borderColor = "#10b981";
+        this.btnAutoTrimSilence.style.color = "#34d399";
+        this.btnAutoTrimSilence.style.background = "rgba(16, 185, 129, 0.15)";
+      } else {
+        this.btnAutoTrimSilence.innerHTML = `⚡ 自動切齊開頭`;
+        this.btnAutoTrimSilence.style.borderColor = "";
+        this.btnAutoTrimSilence.style.color = "";
+        this.btnAutoTrimSilence.style.background = "";
+      }
     }
     this.pauseOffsetSec = 0;
     this.updatePlayheadUi(0);

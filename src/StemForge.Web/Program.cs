@@ -931,6 +931,18 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
                 stem.FilePath = origStemFile;
             }
         }
+        string statePathZero = Path.Combine(jobDir, "project_state.json");
+        if (File.Exists(statePathZero))
+        {
+            try
+            {
+                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathZero)) ?? [];
+                dict["pitchShift"] = 0;
+                dict["appliedPitchShift"] = 0;
+                File.WriteAllText(statePathZero, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
         return Results.Ok(new
         {
             jobId,
@@ -971,6 +983,19 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
             stem.RelativeUrl = $"/projects/{jobId}/pitch_{semitones}/{fn}";
             stem.FilePath = shiftedFile;
         }
+    }
+
+    string statePathShift = Path.Combine(jobDir, "project_state.json");
+    if (File.Exists(statePathShift))
+    {
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathShift)) ?? [];
+            dict["pitchShift"] = semitones;
+            dict["appliedPitchShift"] = semitones;
+            File.WriteAllText(statePathShift, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
     }
 
     string origKey = job.DetectedKey ?? "C Major";
@@ -1020,6 +1045,18 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
     {
         job.CurrentTempoRatio = 1.0;
         job.TargetBpm = origBpm;
+        string statePathTempoOne = Path.Combine(jobDir, "project_state.json");
+        if (File.Exists(statePathTempoOne))
+        {
+            try
+            {
+                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathTempoOne)) ?? [];
+                dict["targetBpm"] = origBpm;
+                dict["appliedTempoRatio"] = 1.0;
+                File.WriteAllText(statePathTempoOne, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch { }
+        }
         foreach (var stem in job.Stems)
         {
             string fn = Path.GetFileName(stem.FilePath);
@@ -1078,6 +1115,18 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
 
     job.CurrentTempoRatio = tempoRatio;
     job.TargetBpm = targetBpm;
+    string statePathTempoShift = Path.Combine(jobDir, "project_state.json");
+    if (File.Exists(statePathTempoShift) && targetBpm.HasValue)
+    {
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathTempoShift)) ?? [];
+            dict["targetBpm"] = targetBpm.Value;
+            dict["appliedTempoRatio"] = tempoRatio;
+            File.WriteAllText(statePathTempoShift, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
+    }
     foreach (var stem in job.Stems)
     {
         string fn = Path.GetFileName(stem.FilePath);

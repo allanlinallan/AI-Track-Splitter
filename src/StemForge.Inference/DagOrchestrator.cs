@@ -304,22 +304,130 @@ public sealed class DagOrchestrator
             catch { }
         }
 
+        SeparationMode activeMode = SeparationMode.BitAccurateResidual;
+        string modeJsonPath = Path.Combine(jobDir, "separation_mode.json");
+        if (File.Exists(modeJsonPath))
+        {
+            try
+            {
+                using var mDoc = JsonDocument.Parse(File.ReadAllText(modeJsonPath));
+                if (mDoc.RootElement.TryGetProperty("mode", out var mProp))
+                {
+                    var modeStr = mProp.GetString();
+                    if (Enum.TryParse<SeparationMode>(modeStr, true, out var parsedMode))
+                    {
+                        activeMode = parsedMode;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        int currentPitchShift = 0;
+        double? targetBpm = detectedBpm;
+        double currentTempoRatio = 1.0;
+
+        if (!string.IsNullOrEmpty(projectStateJson))
+        {
+            try
+            {
+                using var sDoc = JsonDocument.Parse(projectStateJson);
+                var root = sDoc.RootElement;
+                if (root.TryGetProperty("pitchShift", out var psProp) && psProp.TryGetInt32(out var psVal))
+                {
+                    currentPitchShift = psVal;
+                }
+                else if (root.TryGetProperty("appliedPitchShift", out var apsProp) && apsProp.TryGetInt32(out var apsVal))
+                {
+                    currentPitchShift = apsVal;
+                }
+
+                if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
+                {
+                    targetBpm = tbVal;
+                }
+                else if (root.TryGetProperty("currentBpm", out var cbProp) && cbProp.TryGetDouble(out var cbVal) && cbVal > 20)
+                {
+                    targetBpm = cbVal;
+                }
+
+                if (root.TryGetProperty("appliedTempoRatio", out var atrProp) && atrProp.TryGetDouble(out var atrVal) && atrVal > 0.1)
+                {
+                    currentTempoRatio = atrVal;
+                }
+                else if (detectedBpm.HasValue && detectedBpm.Value > 0 && targetBpm.HasValue && targetBpm.Value > 0)
+                {
+                    currentTempoRatio = targetBpm.Value / detectedBpm.Value;
+                }
+
+                if (root.TryGetProperty("separationMode", out var smProp))
+                {
+                    var smStr = smProp.GetString();
+                    if (Enum.TryParse<SeparationMode>(smStr, true, out var smParsed))
+                    {
+                        activeMode = smParsed;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 若曾進行過變調，且變調目錄存在，將音軌路徑指向該目錄
+        if (currentPitchShift != 0)
+        {
+            string pitchDir = Path.Combine(jobDir, $"pitch_{currentPitchShift}");
+            if (Directory.Exists(pitchDir))
+            {
+                foreach (var stem in stemResults)
+                {
+                    string fn = Path.GetFileName(stem.FilePath);
+                    string shiftedWav = Path.Combine(pitchDir, fn);
+                    if (File.Exists(shiftedWav))
+                    {
+                        stem.FilePath = shiftedWav;
+                        stem.RelativeUrl = $"/projects/{jobId}/pitch_{currentPitchShift}/{fn}";
+                    }
+                }
+            }
+        }
+
+        // 若曾進行過變速，且變速目錄存在，將音軌路徑指向該目錄
+        if (targetBpm.HasValue && Math.Abs(currentTempoRatio - 1.0) > 0.005)
+        {
+            int tbInt = (int)Math.Round(targetBpm.Value);
+            string tempoDir = Path.Combine(jobDir, $"tempo_{tbInt}");
+            if (Directory.Exists(tempoDir))
+            {
+                foreach (var stem in stemResults)
+                {
+                    string fn = Path.GetFileName(stem.FilePath);
+                    string stretchedWav = Path.Combine(tempoDir, fn);
+                    if (File.Exists(stretchedWav))
+                    {
+                        stem.FilePath = stretchedWav;
+                        stem.RelativeUrl = $"/projects/{jobId}/tempo_{tbInt}/{fn}";
+                    }
+                }
+            }
+        }
+
         var restored = new SeparationJobResult
         {
             JobId = jobId,
             OriginalFileName = songName,
             SourceAudioPath = origWav,
             SourceAudioUrl = $"/projects/{jobId}/00_Original_Mix.wav",
-            ActiveMode = SeparationMode.BitAccurateResidual,
+            ActiveMode = activeMode,
             DurationSeconds = origDuration,
             SampleRate = origSampleRate,
             NullTestCancellationDbFs = -128.0f,
             ReaperRppUrl = rppUrl,
             DetectedKey = detectedKey,
             DetectedKeyDisplayName = detectedKeyZh,
+            CurrentPitchShift = currentPitchShift,
             DetectedBpm = detectedBpm,
-            CurrentTempoRatio = 1.0,
-            TargetBpm = detectedBpm,
+            CurrentTempoRatio = currentTempoRatio,
+            TargetBpm = targetBpm,
             ProjectStateJson = projectStateJson,
             Stems = stemResults
         };
@@ -520,6 +628,14 @@ public sealed class DagOrchestrator
         updated.CurrentTempoRatio = existing.CurrentTempoRatio;
         updated.TargetBpm = existing.TargetBpm;
         updated.ProjectStateJson = existing.ProjectStateJson;
+        updated.ActiveMode = newMode;
+
+        try
+        {
+            string modeJsonPath = Path.Combine(jobDir, "separation_mode.json");
+            File.WriteAllText(modeJsonPath, JsonSerializer.Serialize(new { mode = newMode.ToString() }));
+        }
+        catch { }
 
         _jobs[jobId] = updated;
         return updated;
@@ -1442,6 +1558,42 @@ public sealed class DagOrchestrator
         if (job != null)
         {
             job.ProjectStateJson = trackStatesJson;
+
+            // 解析並同步更新記憶體中的模式、變調與拍速
+            try
+            {
+                using var doc = JsonDocument.Parse(trackStatesJson);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("separationMode", out var smProp))
+                {
+                    var smStr = smProp.GetString();
+                    if (Enum.TryParse<SeparationMode>(smStr, true, out var parsedMode))
+                    {
+                        job.ActiveMode = parsedMode;
+                        string modeJsonPath = Path.Combine(jobDir, "separation_mode.json");
+                        await File.WriteAllTextAsync(modeJsonPath, JsonSerializer.Serialize(new { mode = parsedMode.ToString() }), ct);
+                    }
+                }
+
+                if (root.TryGetProperty("pitchShift", out var psProp) && psProp.TryGetInt32(out var psVal))
+                {
+                    job.CurrentPitchShift = psVal;
+                }
+                else if (root.TryGetProperty("appliedPitchShift", out var apsProp) && apsProp.TryGetInt32(out var apsVal))
+                {
+                    job.CurrentPitchShift = apsVal;
+                }
+
+                if (root.TryGetProperty("targetBpm", out var tbProp) && tbProp.TryGetDouble(out var tbVal) && tbVal > 20)
+                {
+                    job.TargetBpm = tbVal;
+                    if (job.DetectedBpm.HasValue && job.DetectedBpm.Value > 0)
+                    {
+                        job.CurrentTempoRatio = tbVal / job.DetectedBpm.Value;
+                    }
+                }
+            }
+            catch { }
 
             // 同步更新最新 Reaper 工程檔 (.rpp)
             try
