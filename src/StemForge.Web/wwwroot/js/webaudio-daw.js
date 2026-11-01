@@ -2740,6 +2740,10 @@ class StemForgeDawApp {
         this.currentJob.stems = data.stems;
         this.currentJob.currentPitchShift = semitones;
       }
+      if (this.pitchShiftSlider) {
+        this.pitchShiftSlider.value = semitones;
+      }
+      this.updatePitchUiOnly(semitones);
 
       if (bannerStage) bannerStage.textContent = "READY";
       if (bannerTitle) bannerTitle.textContent = `神經變調完成！當前調性: ${data.targetKey}`;

@@ -485,22 +485,48 @@ public sealed class DagOrchestrator
         if (string.IsNullOrEmpty(initialKey)) initialKey = detectedKey;
         if (string.IsNullOrEmpty(initialKeyZh)) initialKeyZh = detectedKeyZh;
 
-        // 以最新時間點的變速目錄掛載音軌
-        if (latestTempoDir != null && latestTempoBpm.HasValue)
+        // 判定哪一個目錄才是使用者最後執行的狀態：比較最後寫入時間戳，並優先尊崇 project_state.json
+        bool preferPitch = false;
+        bool preferTempo = false;
+
+        if (currentPitchShift != 0)
         {
-            foreach (var stem in stemResults)
+            string specificPitchDir = Path.Combine(jobDir, $"pitch_{currentPitchShift}");
+            if (Directory.Exists(specificPitchDir) && Directory.GetFiles(specificPitchDir, "*.wav").Length > 0)
             {
-                string fn = Path.GetFileName(stem.FilePath);
-                string stretchedWav = Path.Combine(latestTempoDir.FullName, fn);
-                if (File.Exists(stretchedWav))
-                {
-                    stem.FilePath = stretchedWav;
-                    stem.RelativeUrl = $"/projects/{jobId}/{latestTempoDir.Name}/{fn}";
-                }
+                preferPitch = true;
+                latestPitchDir = new DirectoryInfo(specificPitchDir);
+                latestPitchShift = currentPitchShift;
             }
         }
-        else if (latestPitchDir != null && latestPitchShift.HasValue && latestPitchShift.Value != 0)
+
+        if (!preferPitch)
         {
+            if (latestPitchDir != null && latestPitchShift.HasValue && latestPitchShift.Value != 0 &&
+                latestTempoDir != null && latestTempoBpm.HasValue)
+            {
+                if (latestPitchTime >= latestTempoTime)
+                {
+                    preferPitch = true;
+                }
+                else
+                {
+                    preferTempo = true;
+                }
+            }
+            else if (latestPitchDir != null && latestPitchShift.HasValue && latestPitchShift.Value != 0)
+            {
+                preferPitch = true;
+            }
+            else if (latestTempoDir != null && latestTempoBpm.HasValue)
+            {
+                preferTempo = true;
+            }
+        }
+
+        if (preferPitch && latestPitchDir != null && latestPitchShift.HasValue)
+        {
+            currentPitchShift = latestPitchShift.Value;
             foreach (var stem in stemResults)
             {
                 string fn = Path.GetFileName(stem.FilePath);
@@ -509,6 +535,21 @@ public sealed class DagOrchestrator
                 {
                     stem.FilePath = shiftedWav;
                     stem.RelativeUrl = $"/projects/{jobId}/{latestPitchDir.Name}/{fn}";
+                }
+            }
+        }
+        else if (preferTempo && latestTempoDir != null && latestTempoBpm.HasValue)
+        {
+            detectedBpm = (double)latestTempoBpm.Value;
+            targetBpm = (double)latestTempoBpm.Value;
+            foreach (var stem in stemResults)
+            {
+                string fn = Path.GetFileName(stem.FilePath);
+                string stretchedWav = Path.Combine(latestTempoDir.FullName, fn);
+                if (File.Exists(stretchedWav))
+                {
+                    stem.FilePath = stretchedWav;
+                    stem.RelativeUrl = $"/projects/{jobId}/{latestTempoDir.Name}/{fn}";
                 }
             }
         }

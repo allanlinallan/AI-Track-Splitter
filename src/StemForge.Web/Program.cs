@@ -953,10 +953,18 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
         {
             try
             {
-                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathZero)) ?? [];
-                dict["pitchShift"] = 0;
-                dict["appliedPitchShift"] = 0;
-                File.WriteAllText(statePathZero, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+                var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePathZero));
+                if (jsonNode != null)
+                {
+                    jsonNode["pitchShift"] = 0;
+                    jsonNode["appliedPitchShift"] = 0;
+                    if (jsonNode["saved"]?["pitch"] != null)
+                    {
+                        jsonNode["saved"]!["pitch"]!["pitchShiftSemitones"] = 0;
+                        jsonNode["saved"]!["pitch"]!["targetKey"] = job.DetectedKeyDisplayName ?? "原調 (0)";
+                    }
+                    File.WriteAllText(statePathZero, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                }
             }
             catch { }
         }
@@ -1002,21 +1010,29 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
         }
     }
 
+    string origKey = job.DetectedKey ?? "C Major";
+    string targetKey = CalculateTransposedKey(origKey, semitones);
+
     string statePathShift = Path.Combine(jobDir, "project_state.json");
     if (File.Exists(statePathShift))
     {
         try
         {
-            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(statePathShift)) ?? [];
-            dict["pitchShift"] = semitones;
-            dict["appliedPitchShift"] = semitones;
-            File.WriteAllText(statePathShift, JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+            var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(statePathShift));
+            if (jsonNode != null)
+            {
+                jsonNode["pitchShift"] = semitones;
+                jsonNode["appliedPitchShift"] = semitones;
+                if (jsonNode["saved"]?["pitch"] != null)
+                {
+                    jsonNode["saved"]!["pitch"]!["pitchShiftSemitones"] = semitones;
+                    jsonNode["saved"]!["pitch"]!["targetKey"] = targetKey;
+                }
+                File.WriteAllText(statePathShift, jsonNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            }
         }
         catch { }
     }
-
-    string origKey = job.DetectedKey ?? "C Major";
-    string targetKey = CalculateTransposedKey(origKey, semitones);
 
     return Results.Ok(new
     {
