@@ -611,7 +611,7 @@ body {
 .progress-info-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -620,27 +620,27 @@ body {
 .stage-tag {
   background: #1e3a8a;
   color: #93c5fd;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1.5px 6px;
   border-radius: 3px;
   line-height: 1.2;
 }
 
 #progressTitleText {
-  font-size: 11px;
+  font-size: 11.5px;
   color: #e2e8f0;
   font-weight: 600;
 }
 
 .progress-sub-divider {
   color: #334155;
-  font-size: 10px;
+  font-size: 10.5px;
   user-select: none;
 }
 
 .progress-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 0;
   overflow: hidden;
@@ -651,7 +651,7 @@ body {
 .pct-num {
   font-family: Consolas, monospace;
   font-weight: 700;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: #38bdf8;
   margin-right: 2px;
 }
@@ -669,15 +669,15 @@ body {
   transition: width 0.2s ease;
 }
 
-/* Transport Bar — 緊湊專業 3 行 DAW 工具列 (自適應防溢出設計) */
+/* Transport Bar — 緊湊專業 3 行 DAW 工具列 (舒適字體與延展版面) */
 .transport-bar {
   background: #111827;
   border-bottom: 1px solid var(--border-col);
-  padding: 5px 16px;
+  padding: 6px 16px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   width: 100%;
   flex-shrink: 0;
 }
@@ -687,7 +687,7 @@ body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  gap: 8px;
+  gap: 10px;
   box-sizing: border-box;
 }
 
@@ -706,14 +706,14 @@ body {
 .transport-group-left {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: nowrap;
 }
 
 .toolbar-sep {
   color: #334155;
-  margin: 0 3px;
-  font-size: 11px;
+  margin: 0 4px;
+  font-size: 12px;
   user-select: none;
 }
 
@@ -721,16 +721,16 @@ body {
   background: #1e293b;
   border: 1px solid #334155;
   color: #f1f5f9;
-  padding: 3px 7px;
+  padding: 4px 9px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  height: 25px;
+  height: 27px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   transition: all 0.15s ease;
 }
 
@@ -759,19 +759,19 @@ body {
 .metronome-control-box {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid #334155;
   border-radius: 4px;
-  padding: 1px 6px;
-  height: 25px;
+  padding: 2px 8px;
+  height: 27px;
 }
 
 .metro-toggle-label {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10px;
+  gap: 4px;
+  font-size: 11px;
   font-weight: 600;
   color: #cbd5e1;
   cursor: pointer;
@@ -787,8 +787,8 @@ body {
 .metro-toggle-label input[type="checkbox"] {
   accent-color: #38bdf8;
   cursor: pointer;
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   margin: 0;
 }
 
@@ -797,9 +797,9 @@ body {
   border: 1px solid #0284c7;
   color: #38bdf8;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 1px 3px;
+  padding: 1px 4px;
   cursor: pointer;
   outline: none;
 }
@@ -808,10 +808,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 800;
   font-family: Consolas, monospace;
   color: #475569;
@@ -839,15 +839,15 @@ body {
 .timecode-box {
   background: #070a12;
   border: 1px solid #1e293b;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 4px;
   font-family: Consolas, "Courier New", monospace;
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: #38bdf8;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
   white-space: nowrap;
-  height: 25px;
+  height: 27px;
   display: inline-flex;
   align-items: center;
 }
@@ -855,15 +855,16 @@ body {
 .master-fader-box {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
   white-space: nowrap;
-  height: 25px;
+  height: 28px;
 }
 
 .master-fader-box input[type="range"] {
-  width: 75px;
-  height: 4px;
+  width: 95px;
+  height: 5px;
   accent-color: #38bdf8;
   cursor: pointer;
 }
@@ -872,24 +873,24 @@ body {
   background: rgba(16, 185, 129, 0.14);
   border: 1px solid rgba(16, 185, 129, 0.4);
   color: #34d399;
-  padding: 2px 6px;
-  border-radius: 3px;
+  padding: 3px 8px;
+  border-radius: 4px;
   font-family: Consolas, monospace;
-  font-size: 10.5px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
-/* Pitch Shift Panel (單行緊湊) */
+/* Pitch Shift Panel (單行舒適) */
 .pitch-shift-panel {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 4px;
-  padding: 2px 6px;
-  height: 26px;
+  border-radius: 5px;
+  padding: 2px 8px;
+  height: 28px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -897,44 +898,44 @@ body {
 .pitch-key-info {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10.5px;
+  gap: 4px;
+  font-size: 11px;
 }
 
 .pitch-badge-orig {
   background: rgba(59, 130, 246, 0.18);
   border: 1px solid rgba(59, 130, 246, 0.5);
   color: #60a5fa;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .pitch-arrow {
   color: #64748b;
-  font-size: 8.5px;
+  font-size: 9.5px;
 }
 
 .pitch-badge-target {
   background: rgba(168, 85, 247, 0.18);
   border: 1px solid rgba(168, 85, 247, 0.5);
   color: #c084fc;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .pitch-controls-row {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .pitch-controls-row input[type="range"] {
-  width: 50px;
-  height: 4px;
+  width: 75px;
+  height: 5px;
   accent-color: #a855f7;
   cursor: pointer;
 }
@@ -943,9 +944,9 @@ body {
   background: #1e293b;
   border: 1px solid #334155;
   color: #cbd5e1;
-  padding: 1px 4px;
+  padding: 2px 5px;
   border-radius: 3px;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
   cursor: pointer;
   line-height: 1.1;
@@ -958,10 +959,10 @@ body {
 
 .pitch-value-label {
   font-family: Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #f1f5f9;
-  min-width: 38px;
+  min-width: 44px;
   text-align: center;
 }
 
@@ -969,9 +970,9 @@ body {
   background: linear-gradient(135deg, #9333ea, #7c3aed);
   border: 1px solid #a855f7;
   color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -987,9 +988,9 @@ body {
   background: #1e293b;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-size: 9.5px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
@@ -1001,17 +1002,17 @@ body {
   color: white;
 }
 
-/* Tempo / BPM Shift Panel (單行緊湊) */
+/* Tempo / BPM Shift Panel (單行舒適) */
 .tempo-panel {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 4px;
-  padding: 2px 6px;
-  height: 26px;
+  border-radius: 5px;
+  padding: 2px 8px;
+  height: 28px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -1019,44 +1020,44 @@ body {
 .tempo-info {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10.5px;
+  gap: 4px;
+  font-size: 11px;
 }
 
 .tempo-badge-orig {
   background: rgba(16, 185, 129, 0.18);
   border: 1px solid rgba(16, 185, 129, 0.5);
   color: #34d399;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .tempo-arrow {
   color: #64748b;
-  font-size: 8.5px;
+  font-size: 9.5px;
 }
 
 .tempo-badge-target {
   background: rgba(6, 182, 212, 0.18);
   border: 1px solid rgba(6, 182, 212, 0.5);
   color: #22d3ee;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
   font-weight: 700;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .tempo-controls-row {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .tempo-controls-row input[type="range"] {
-  width: 55px;
-  height: 4px;
+  width: 80px;
+  height: 5px;
   accent-color: #06b6d4;
   cursor: pointer;
 }
@@ -1065,9 +1066,9 @@ body {
   background: #1e293b;
   border: 1px solid #334155;
   color: #cbd5e1;
-  padding: 1px 4px;
+  padding: 2px 5px;
   border-radius: 3px;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
   cursor: pointer;
   line-height: 1.1;
@@ -1080,10 +1081,10 @@ body {
 
 .tempo-value-label {
   font-family: Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: #f1f5f9;
-  min-width: 42px;
+  min-width: 48px;
   text-align: center;
 }
 
@@ -1091,9 +1092,9 @@ body {
   background: linear-gradient(135deg, #059669, #0d9488);
   border: 1px solid #10b981;
   color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -1109,9 +1110,9 @@ body {
   background: #1e293b;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-size: 9.5px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
@@ -1123,10 +1124,10 @@ body {
   color: white;
 }
 
-/* Row 3: 工程管理與匯出動作列 */
+/* Row 3: 工程管理與匯出動作列 (寬裕舒適排版) */
 .transport-row-export {
   justify-content: space-between;
-  gap: 6px;
+  gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -1134,20 +1135,20 @@ body {
 .export-group-left, .export-group-right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 
 .export-actions .btn {
-  padding: 3px 7px;
-  font-size: 10.5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
   border-radius: 4px;
   white-space: nowrap;
-  height: 24px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   line-height: 1;
 }
 
@@ -1709,36 +1710,36 @@ body {
 .edit-tools-panel {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 4px;
-  padding: 2px 6px;
+  border-radius: 5px;
+  padding: 2px 7px;
   height: 27px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .tools-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: #64748b;
-  margin-right: 1px;
+  margin-right: 2px;
 }
 
 .edit-tool-btn {
   background: #1e293b;
   border: 1px solid #334155;
   color: #94a3b8;
-  padding: 2px 6px;
+  padding: 3px 7px;
   border-radius: 3px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  height: 21px;
+  height: 23px;
   line-height: 1;
   transition: all 0.15s ease;
 }
