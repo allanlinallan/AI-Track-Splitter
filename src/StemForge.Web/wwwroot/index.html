@@ -1,1581 +1,3161 @@
-<!DOCTYPE html>
-
-
-
-<html lang="zh-Hant">
-
-
-
-<head>
-
-
-
-  <meta charset="UTF-8" />
-
-
-
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-
-
-  <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
-
-
-
-  <link rel="stylesheet" href="/css/daw.css?v=59" />
-
-
-
-  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" />
-
-
-
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=1" />
-
-
-
-  <link rel="apple-touch-icon" href="/images/logo.png?v=1" />
-
-
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
-
-
-
-</head>
-
-
-
-<body>
-
-
-
-  <!-- 頂部系統與硬體狀態列 -->
-
-
-
-  <header class="topbar">
-
-
-
-    <div class="brand">
-
-
-
-      <img src="/images/logo.png?v=1" alt="StemForge Studio" class="brand-logo" />
-
-
-
-      <span class="brand-badge">STEMFORGE v2.1 (.NET 9)</span>
-
-
-
-      <h1>極限精細音軌分離工作站 <small>19+ Stems Hierarchical DAG + Waveform-Playlist WebAudio Mixer</small></h1>
-
-
-
-    </div>
-
-
-
-    <div class="hw-badges" id="hwStatusContainer">
-
-
-
-      <div class="hw-pill"><span class="dot green"></span><span id="gpuNameText">檢測中...</span></div>
-
-
-
-      <div class="hw-pill">VRAM: <strong id="vramUsageText">-- / -- MB</strong></div>
-
-
-
-      <div class="hw-pill">磁碟可用: <strong id="diskFreeText">-- GB</strong></div>
-
-
-
-      <div class="hw-pill" id="engineModePill">AI CLI + C# SIMD Ready</div>
-
-
-
-      <a href="/docs/USER_GUIDE.html" target="_blank" class="hw-pill" style="text-decoration: none; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700; cursor: pointer;" title="在新分頁開啟完整使用手冊">📖 使用手冊</a>
-
-
-
-    </div>
-
-
-
-  </header>
-
-
-
-
-
-
-
-  <div class="workspace-grid">
-
-
-
-    <!-- 左側控制面板：音源輸入 + 模式選擇 + 19軌互動式分軌樹 -->
-
-
-
-    <aside class="sidebar">
-
-
-
-      <section class="panel-card">
-
-
-
-        <div class="panel-title">1. 音源載入 (MP3 / WAV / FLAC / MP4 影片)</div>
-
-
-
-        <div class="dropzone" id="dropzone">
-
-
-
-          <input type="file" id="audioFileInput" accept=".mp3,.wav,.flac,.m4a,.ogg,.mp4,.mkv,.mov,.m4v,.webm" hidden />
-
-
-
-          <div class="drop-icon">🎵</div>
-
-
-
-          <div id="selectedFileLabel" class="drop-title">點擊選擇或拖曳音樂 / 影片檔案至此</div>
-
-
-
-          <div class="drop-sub">支援 MP3 / WAV / FLAC 及 MP4 / MKV / MOV 影片（自動抽離音訊），32-bit Float 雙聲道處理</div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div class="local-path-box">
-
-
-
-          <input type="text" id="localPathInput" placeholder="或直接貼上本機檔案路徑 (如 D:\music\song.mp3 或 video.mp4)" />
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <!-- 🎧 音源即時試聽播放器 (Pre-listen Player) -->
-
-
-
-        <div class="audio-preview-card" id="audioPreviewCard" style="display: none;">
-
-
-
-          <div class="preview-header">
-
-
-
-            <span class="preview-badge">🎧 音源試聽</span>
-
-
-
-            <span class="preview-filename" id="previewFileName" title="預聽檔案名稱">--</span>
-
-
-
-            <span class="preview-time" id="previewTimeText">00:00 / 00:00</span>
-
-
-
-          </div>
-
-
-
-          <div class="preview-controls">
-
-
-
-            <button type="button" class="btn-preview-play" id="btnPreviewPlay" title="播放 / 暫停試聽">▶ 播放試聽</button>
-
-
-
-            <input type="range" class="preview-scrubber" id="previewScrubber" min="0" max="100" step="0.1" value="0" title="拖曳時間軸進度" />
-
-
-
-            <div class="preview-vol-wrap">
-
-
-
-              <span class="preview-vol-icon" id="previewMuteIcon" title="點擊切換靜音">🔊</span>
-
-
-
-              <input type="range" class="preview-vol" id="previewVolume" min="0" max="1" step="0.05" value="0.9" title="試聽音量" />
-
-
-
-            </div>
-
-
-
-          </div>
-
-
-
-          <audio id="previewAudioElement" preload="metadata" style="display:none;"></audio>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div class="action-row">
-
-
-
-          <button class="btn btn-primary" id="btnStartSeparate">🚀 開始精細分軌</button>
-
-
-
-          <button class="btn btn-secondary" id="btnOpenHistory" title="載入之前已完成分軌的歷史專案">📂 載入歷史專案</button>
-
-
-
-        </div>
-
-
-
-      </section>
-
-
-
-
-
-
-
-      <section class="panel-card">
-
-
-
-        <div class="panel-title">
-
-
-
-          <span>2. 分離與相位守恆模式</span>
-
-
-
-          <span class="badge-instant">支援0秒即時切換</span>
-
-
-
-        </div>
-
-
-
-        <select id="separationModeSelect" class="daw-select">
-
-
-
-          <option value="BitAccurateResidual" selected>100% 能量守恆 (獨立第19軌 Residual，Null Test = -144dB)</option>
-
-
-
-          <option value="BitAccurateProportional">100% 能量守恆 (殘差按能量比例回填各軌，無額外殘差軌)</option>
-
-
-
-          <option value="PureIsolation">扒帶 / 抓譜模式 (Pure Isolation 軟閘門消除串音)</option>
-
-
-
-          <option value="AiTrainingDry">AI 訓練 / 採樣模式 (極致去殘響 + 去底噪 + -1dBFS 正規化)</option>
-
-
-
-        </select>
-
-
-
-
-
-
-
-        <div class="options-grid">
-
-
-
-          <label class="chk-label"><input type="checkbox" id="chkFp16" checked /> RTX 4050 FP16 半精度加速</label>
-
-
-
-          <label class="chk-label"><input type="checkbox" id="chkAutoMidi" /> 分離時自動轉出全軌 MIDI</label>
-
-
-
-        </div>
-
-
-
-      </section>
-
-
-
-
-
-
-
-      <section class="panel-card tree-card">
-
-
-
-        <div class="panel-title">
-
-
-
-          <span>3. 階層式分軌樹勾選 (DAG 19+ Stems)</span>
-
-
-
-          <span id="selectedCountBadge" class="count-pill">18 軌</span>
-
-
-
-        </div>
-
-
-
-        <div class="preset-btns" id="presetBtnsContainer">
-
-
-
-          <button class="btn-xs" data-preset="all">全選 18 軌</button>
-
-
-
-          <button class="btn-xs" data-preset="none">清空 0 軌</button>
-
-
-
-          <button class="btn-xs" data-preset="vocals">人聲極致 5 軌</button>
-
-
-
-          <button class="btn-xs" data-preset="drums">DrumSep 鼓組 6 軌</button>
-
-
-
-          <button class="btn-xs" data-preset="rhythm">節奏組 (鼓+Bass)</button>
-
-
-
-          <button class="btn-xs" data-preset="inst">吉他/管弦細分</button>
-
-
-
-          <button class="btn-xs" data-preset="karaoke">KTV 伴唱 (去主唱)</button>
-
-
-
-          <button class="btn-xs btn-add" id="btnSaveCustomPreset" title="將目前勾選的音軌組合儲存為你自己的預設按鈕">+ 儲存自訂組合</button>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div id="dagTreeContainer" class="dag-tree-list"></div>
-
-
-
-
-
-
-
-        <!-- AudioSep 自然語言指定樂器抽離 -->
-
-
-
-        <div class="audiosep-box">
-
-
-
-          <div class="sub-label">🎯 AudioSep 文字提示額外抽離樂器 (選填)</div>
-
-
-
-          <div class="prompt-input-row">
-
-
-
-            <input type="text" id="promptInput" placeholder="輸入英文樂器如 violin, saxophone, flute..." />
-
-
-
-            <button class="btn-xs btn-add" id="btnAddPrompt">+ 新增</button>
-
-
-
-          </div>
-
-
-
-          <div class="prompt-tags" id="promptTagsContainer">
-
-
-
-            <span class="prompt-chip" data-prompt="violin">violin <b class="rm-chip">×</b></span>
-
-
-
-            <span class="prompt-chip" data-prompt="brass">brass <b class="rm-chip">×</b></span>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-      </section>
-
-
-
-    </aside>
-
-
-
-
-
-
-
-    <!-- 右側主控台：進度監控 + Master Transport + 多軌同步 DAW 混音器 -->
-
-
-
-    <main class="main-stage">
-
-
-
-      <!-- 即時進度與節點快取狀態列 -->
-
-
-
-      <!-- 即時進度與節點快取狀態列（超緊湊頂部指示條，高度僅 22px） -->
-
-
-
-      <section class="progress-banner" id="progressBanner">
-
-
-
-        <div class="progress-header">
-
-
-
-          <div class="progress-info-line">
-
-
-
-            <span class="stage-tag" id="progressStageTag">READY</span>
-
-
-
-            <strong id="progressTitleText">等待啟動分軌任務...（請於左側上傳音訊/影片或載入歷史專案）</strong>
-
-
-
-            <span class="progress-sub-divider">|</span>
-
-
-
-            <span class="progress-sub" id="progressSubText">系統平時不佔用任何背景 Python 程序；僅在執行分離時一次性呼叫並自動釋放 100% 顯存。</span>
-
-
-
-          </div>
-
-
-
-          <span class="pct-num" id="progressPctText">0%</span>
-
-
-
-        </div>
-
-
-
-        <div class="progress-track">
-
-
-
-          <div class="progress-fill" id="progressBarFill" style="width: 0%"></div>
-
-
-
-        </div>
-
-
-
-      </section>
-
-
-
-
-
-
-
-      <!-- DAW 多軌同步混音控制器 (Master Transport & Null Test) - 完美平衡 3 行專業佈局 (寬度控制在 950px 內，絕不跑出螢幕) -->
-
-
-
-      <section class="transport-bar">
-        <!-- 第 1 行：走帶播放 + 節拍器預拍 + ✂️ 片段剪輯 + ⚡ 自動切齊開頭 + 時間碼 (全行精確控制在 980px 內，安全不溢出) -->
-        <div class="transport-row transport-row-primary">
-          <div class="transport-group-left">
-            <button class="t-btn t-play" id="btnPlayPause" disabled>▶ 播放</button>
-            <button class="t-btn" id="btnStop" disabled>⏹ 停止</button>
-            <button class="t-btn" id="btnSoloClear" disabled title="一鍵解除所有分軌的 Solo 獨奏與 Mute 靜音狀態">解除全 Solo/Mute</button>
-            <button class="t-btn t-nulltest" id="btnNullTest" disabled title="將所有分軌總和與原始母帶反相 (-180°) 疊加播放，驗證 100% 能量守恆與殘差">
-              Ø 反相抵消
-            </button>
-
-            <span class="toolbar-sep">|</span>
-
-            <!-- 🔔 節拍器與預拍一小節控制組 (Metronome & Count-in) -->
-            <div class="metronome-control-box" id="metronomeControlBox">
-              <label class="metro-toggle-label" title="播放前先空 1 小節（4 拍預備拍），第一拍高音重音，抓準節奏再切入音樂">
-                <input type="checkbox" id="chkCountIn" />
-                <span>⏳ 預拍1小節</span>
-              </label>
-              <select id="selCountInPickup" class="metro-select" title="弱起拍進歌點：設定音樂在預備小節的第幾拍進場發聲" style="display: none;">
-                <option value="0">🎯 第 1 拍 (正拍)</option>
-                <option value="0.5">🎵 倒數半拍 (搶拍)</option>
-                <option value="1">🎵 第 4 拍</option>
-                <option value="2">🎵 第 3 拍</option>
-              </select>
-              <label class="metro-toggle-label" title="播放時依照歌曲 BPM 速度同步敲打節拍器">
-                <input type="checkbox" id="chkMetronome" />
-                <span>🔔 節拍器</span>
-              </label>
-              <span class="metro-beat-indicator" id="metroBeatIndicator" title="節拍器對拍閃爍燈">●</span>
-            </div>
-
-            <span class="toolbar-sep">|</span>
-
-            <!-- ✂️ 片段剪輯與編曲工具箱 + ⚡ 自動切齊開頭 (超顯眼亮綠色，保證 100% 完整可見) -->
-            <div class="edit-tools-panel" id="editToolsPanel">
-              <span class="tools-label">剪輯:</span>
-              <button class="edit-tool-btn active" id="btnToolPointer" title="一般選取/跳轉播放模式 (快速鍵: 1)">🖐️ 選取</button>
-              <button class="edit-tool-btn" id="btnToolDrag" title="拖曳平移對齊模式：在波形上按住左右拖曳即可自由滑動對齊節奏 (快速鍵: 2)">↔️ 拖曳</button>
-              <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 3)">✂️ 剪刀</button>
-              <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 4)">🔇 消音</button>
-              <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段與平移">⟲</button>
-              <span class="toolbar-sep">|</span>
-              <label class="nudge-step-label" title="設定音軌 ◀ / ▶ 按鈕微調步進量 (可選 0.5ms ~ 50ms)">
-                <span>步進:</span>
-                <select id="selNudgeStep" class="nudge-step-select">
-                  <option value="0.0005">0.5ms</option>
-                  <option value="0.001" selected>1ms</option>
-                  <option value="0.002">2ms</option>
-                  <option value="0.005">5ms</option>
-                  <option value="0.010">10ms</option>
-                  <option value="0.020">20ms</option>
-                  <option value="0.050">50ms</option>
-                </select>
-              </label>
-              <span class="toolbar-sep">|</span>
-              <button class="edit-tool-btn btn-tool-trim" id="btnAutoTrimSilence" title="AI 自動偵測開頭無音訊靜音，智慧對齊第 1 拍（自動識別弱起拍/半拍起音）">⚡ 自動切齊開頭</button>
-              <button class="edit-tool-btn btn-tool-reset" id="btnResetTrim" style="display: none;" title="恢復原始開頭位置">⟲ 恢復原點</button>
-            </div>
-          </div>
-
-          <!-- 右側：時間碼 -->
-          <div class="timecode-box">
-            <span id="currentTimeText">00:00.000</span>
-            <span class="sep">/</span>
-            <span id="totalTimeText">00:00.000</span>
-          </div>
-        </div>
-
-        <!-- 第 2 行：AI 變調 + AI 變速 + Master 總音量與 Null 誤差 (全行寬度緊湊優化在 960px 內，絕不切邊) -->
-        <div class="transport-row transport-row-tuning">
-          <div class="transport-group-left">
-            <!-- AI 神經變調控制組 -->
-            <div class="pitch-shift-panel" id="pitchShiftPanel">
-              <div class="pitch-key-info">
-                <div style="position: relative; display: inline-flex; align-items: center;">
-                  <span class="pitch-badge-orig" id="detectedKeyBadge" title="點擊直接修改原調（以大調為主）" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原調: -- ▾</span>
-                  <select id="keyOverrideSelect" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;" title="點擊選擇原調 (以大調為主)">
-                    <option value="" disabled selected>-- 選擇原調 --</option>
-                    <optgroup label="🎵 常用大調 (Major)">
-                      <option value="C Major|C 大調 (C Major)">C 大調 (C Major)</option>
-                      <option value="C# Major|C# / Db 大調 (C# Major)">C# / Db 大調</option>
-                      <option value="D Major|D 大調 (D Major)">D 大調 (D Major)</option>
-                      <option value="D# Major|D# / Eb 大調 (Eb Major)">D# / Eb 大調</option>
-                      <option value="E Major|E 大調 (E Major)">E 大調 (E Major)</option>
-                      <option value="F Major|F 大調 (F Major)">F 大調 (F Major)</option>
-                      <option value="F# Major|F# / Gb 大調 (F# Major)">F# / Gb 大調</option>
-                      <option value="G Major|G 大調 (G Major)">G 大調 (G Major)</option>
-                      <option value="G# Major|G# / Ab 大調 (Ab Major)">G# / Ab 大調</option>
-                      <option value="A Major|A 大調 (A Major)">A 大調 (A Major)</option>
-                      <option value="A# Major|A# / Bb 大調 (Bb Major)">A# / Bb 大調</option>
-                      <option value="B Major|B 大調 (B Major)">B 大調 (B Major)</option>
-                    </optgroup>
-                    <optgroup label="🎼 小調 (Minor)">
-                      <option value="A Minor|A 小調 (A Minor)">A 小調 (A Minor)</option>
-                      <option value="E Minor|E 小調 (E Minor)">E 小調 (E Minor)</option>
-                      <option value="B Minor|B 小調 (B Minor)">B 小調 (B Minor)</option>
-                      <option value="F# Minor|F# 小調 (F# Minor)">F# 小調 (F# Minor)</option>
-                      <option value="C# Minor|C# 小調 (C# Minor)">C# 小調 (C# Minor)</option>
-                      <option value="G# Minor|G# 小調 (G# Minor)">G# 小調 (G# Minor)</option>
-                      <option value="D# Minor|D# 小調 (D# Minor)">D# 小調 (D# Minor)</option>
-                      <option value="D Minor|D 小調 (D Minor)">D 小調 (D Minor)</option>
-                      <option value="G Minor|G 小調 (G Minor)">G 小調 (G Minor)</option>
-                      <option value="C Minor|C 小調 (C Minor)">C 小調 (C Minor)</option>
-                      <option value="F Minor|F 小調 (F Minor)">F 小調 (F Minor)</option>
-                      <option value="A# Minor|A# / Bb 小調 (Bb Minor)">A# / Bb 小調</option>
-                    </optgroup>
-                  </select>
-                </div>
-                <span class="pitch-arrow">➔</span>
-                <span class="pitch-badge-target" id="targetKeyBadge" title="當前變調目標調性">目標: 原調 (0)</span>
-              </div>
-              <div class="pitch-controls-row">
-                <button class="pitch-step-btn" id="btnPitchDown" title="降 1 個半音">-1</button>
-                <input type="range" id="pitchShiftSlider" min="-6" max="6" step="1" value="0" title="升降 Key (±6 半音)" />
-                <button class="pitch-step-btn" id="btnPitchUp" title="升 1 個半音">+1</button>
-                <span class="pitch-value-label" id="pitchValueLabel">0 半音</span>
-                <button class="btn-xs btn-pitch-apply" id="btnApplyPitch" title="確定並執行神經變調">⚡ 套用變調</button>
-                <button class="btn-xs btn-pitch-reset" id="btnResetPitch" title="一鍵重設回原調 (0 半音)">⟲ 恢復原調</button>
-              </div>
-            </div>
-
-            <span class="toolbar-sep">|</span>
-
-            <!-- AI 時間軸拍速控制組 -->
-            <div class="tempo-panel" id="tempoPanel">
-              <div class="tempo-info">
-                <span class="tempo-badge-orig" id="detectedBpmBadge" title="點擊修改歌曲原速 BPM (將同步更新時間軸與 Reaper 節拍網格)" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原速: -- BPM</span>
-                <span class="tempo-arrow">➔</span>
-                <span class="tempo-badge-target" id="targetBpmBadge" title="當前目標拍速">目標: 原速</span>
-              </div>
-              <div class="tempo-controls-row">
-                <button class="tempo-step-btn" id="btnTempoDown" title="減少 1 BPM">-1</button>
-                <input type="range" id="tempoSlider" min="50" max="220" step="1" value="120" title="調整拍速 (BPM)" />
-                <button class="tempo-step-btn" id="btnTempoUp" title="增加 1 BPM">+1</button>
-                <span class="tempo-value-label" id="tempoValueLabel">120 BPM</span>
-                <button class="btn-xs btn-tempo-apply" id="btnApplyTempo" title="確定並執行 21 軌無損時間軸變速">⚡ 套用新拍速</button>
-                <button class="btn-xs btn-tempo-reset" id="btnResetTempo" title="一鍵重設回原速">⟲ 恢復原速</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- 右側：Master 推子與 Null 誤差 (安全預留超寬裕空間，絕對不跑出邊界) -->
-          <div class="master-fader-box">
-            <label>Master</label>
-            <input type="range" id="masterVolumeSlider" min="0" max="1.2" step="0.01" value="1.0" />
-            <span id="nullCancellationBadge" class="null-badge" title="所有分軌相加與原曲的最大相位誤差">Null 誤差: -- dBFS</span>
-          </div>
-        </div>
-
-        <!-- 第 3 行：工程管理與多軌匯出 (兩端對齊，整齊大器) -->
-        <div class="transport-row transport-row-export export-actions">
-          <div class="export-group-left">
-            <button class="btn btn-select-toggle" id="btnSelectAllTracks" disabled title="一鍵打勾選取全部音軌">☑️ 全選</button>
-            <button class="btn btn-select-toggle" id="btnClearAllTracks" disabled title="一鍵清空所有音軌勾選">⬜ 全清</button>
-            <button class="btn btn-add-custom-track" id="btnAddCustomTrack" title="自訂新增音軌 (可上傳 WAV / MP3 / FLAC / M4A 或錄音檔加入此混音專案)">➕ 新增自訂音軌</button>
-            <span class="toolbar-sep">|</span>
-            <button class="btn btn-save" id="btnSaveProject" disabled title="直接儲存當前專案之消音與剪輯狀態 (快速鍵: Ctrl + S)">💾 儲存專案</button>
-            <button class="btn btn-save-as" id="btnSaveAsProject" disabled title="將當前工程另存為全新專案副本">📑 另存新專案...</button>
-          </div>
-          <div class="export-group-right">
-            <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
-            <button class="btn btn-zip" id="btnExportZip" disabled title="打包下載全部分軌">📦 打包全軌 ZIP</button>
-            <button class="btn btn-zip btn-zip-selected" id="btnExportSelectedZip" disabled title="僅打包勾選的分軌 WAV 檔">📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">0</span>)</button>
-            <button class="btn btn-mixdown btn-mixdown-wav" id="btnExportMixdownWav" disabled title="將已勾選的所有分軌即時混音為無損 32-bit Float WAV 下載">🎚️ 合併匯出 WAV (<span id="mixdownWavCountText">0</span>)</button>
-            <button class="btn btn-mixdown btn-mixdown-mp3" id="btnExportMixdownMp3" disabled title="將已勾選的所有分軌即時混音為 320kbps MP3 下載">🎵 合併匯出 MP3 (<span id="mixdownMp3CountText">0</span>)</button>
-          </div>
-        </div>
-      </section>
-
-
-
-
-
-
-
-      <!-- 全域時間軸進度拖曳條 -->
-
-
-
-      <div class="timeline-scrubber" id="timelineScrubber">
-
-
-
-        <div class="scrubber-progress" id="scrubberProgress" style="width: 0%"></div>
-
-
-
-        <div class="scrubber-head" id="scrubberHead" style="left: 0%"></div>
-
-
-
-      </div>
-
-
-
-
-
-
-
-      <!-- 多軌同步混音台列表 (Channel Strips + Canvas Waveforms) -->
-
-
-
-      <section class="mixer-wrapper" id="mixerWrapper">
-
-
-
-        <section class="mixer-tracks-container" id="mixerTracksContainer">
-
-
-
-          <div class="empty-mixer-state">
-
-
-
-            <div class="empty-icon">🎚️</div>
-
-
-
-            <h3>多軌同步 DAW 混音台已就緒</h3>
-
-
-
-            <p>請在左側上傳音樂檔案，或點擊 <strong>「📂 載入歷史專案」</strong> 快速回播已處理過的分軌。</p>
-
-
-
-          </div>
-
-
-
-        </section>
-
-
-
-
-
-
-
-        <!-- 處理中半透明變暗遮罩層 (Busy Overlay) -->
-
-
-
-        <div class="mixer-busy-overlay" id="mixerBusyOverlay">
-
-
-
-          <div class="busy-card">
-
-
-
-            <div class="busy-spinner-wrap">
-
-
-
-              <div class="busy-spinner-glow"></div>
-
-
-
-              <div class="busy-spinner-ring"></div>
-
-
-
-              <div class="busy-spinner-icon" id="busySpinnerIcon">⚡</div>
-
-
-
-            </div>
-
-
-
-            <div class="busy-title" id="busyOverlayTitle">AI 處理中...</div>
-
-
-
-            <div class="busy-sub" id="busyOverlaySub">請稍候，正在進行演算...</div>
-
-
-
-            <div class="busy-track">
-
-
-
-              <div class="busy-fill" id="busyOverlayFill" style="width: 0%"></div>
-
-
-
-            </div>
-
-
-
-            <div class="busy-pct-text" id="busyOverlayPct">0%</div>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-      </section>
-
-
-
-    </main>
-
-
-
-  </div>
-
-
-
-
-
-
-
-  <!-- 歷史專案彈出視窗 Modal -->
-
-
-
-  <div class="history-modal" id="historyModal">
-
-
-
-    <div class="history-modal-content">
-
-
-
-      <div class="history-modal-header">
-
-
-
-        <h3>📂 載入已做過的分軌專案</h3>
-
-
-
-        <button class="btn-close" id="btnCloseHistory">&times;</button>
-
-
-
-      </div>
-
-
-
-      <div class="history-list" id="historyListContainer">
-
-
-
-        <div class="empty-history-text">正在載入本機歷史分軌...</div>
-
-
-
-      </div>
-
-
-
-    </div>
-
-
-
-  </div>
-
-
-
-
-
-
-
-  <!-- 另存專案彈窗 (Save As Project Modal) -->
-
-
-
-  <div class="history-modal" id="saveAsModal">
-
-
-
-    <div class="history-modal-content" style="max-width: 520px; border: 1px solid #3b82f6; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
-
-
-
-      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
-
-
-
-        <h3 style="color: #60a5fa; display: flex; align-items: center; gap: 8px;">💾 另存分軌專案 (Save As Project)</h3>
-
-
-
-        <button class="btn-close" id="btnCloseSaveAs">&times;</button>
-
-
-
-      </div>
-
-
-
-      <div style="padding: 24px;">
-
-
-
-        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
-
-
-
-          系統將為您建立一個獨立的新專案副本，完整保留目前的 <strong>消音剪輯、時間軸變速、變調設定與所有分軌</strong>：
-
-
-
-        </p>
-
-
-
-        <div style="margin-bottom: 22px;">
-
-
-
-          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:8px;">新專案名稱：</label>
-
-
-
-          <input type="text" id="saveAsProjectNameInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #3b82f6; color:#f8fafc; padding:12px 14px; border-radius:8px; font-size:1rem; outline:none;" placeholder="例如：告五人 - 披星戴月的想你 (修剪版)" />
-
-
-
-        </div>
-
-
-
-        <div style="display:flex; justify-content:flex-end; gap:12px;">
-
-
-
-          <button class="btn" id="btnCancelSaveAs" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
-
-
-
-          <button class="btn btn-primary" id="btnConfirmSaveAs" style="background:#2563eb; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">💾 確認另存新專案</button>
-
-
-
-        </div>
-
-
-
-      </div>
-
-
-
-    </div>
-
-
-
-  </div>
-
-
-
-
-
-
-
-  <!-- ✂️ AI 自動切齊開頭靜音彈窗 (Auto Trim Silence Modal) -->
-
-
-
-  <div class="history-modal" id="trimSilenceModal">
-
-
-
-    <div class="history-modal-content" style="max-width: 680px; border: 1px solid #10b981; box-shadow: 0 10px 35px rgba(0,0,0,0.7);">
-
-
-
-      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
-
-
-
-        <h3 style="color: #34d399; display: flex; align-items: center; gap: 8px;">✂️ 精確切齊開頭靜音與弱起拍設定</h3>
-
-
-
-        <button class="btn-close" id="btnCloseTrimSilence">&times;</button>
-
-
-
-      </div>
-
-
-
-      <div style="padding: 20px 24px;">
-
-
-
-        <div id="trimDetectInfo" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; color: #a7f3d0; font-size: 0.88rem; margin-bottom: 14px; line-height: 1.45;">
-
-
-
-          正在掃描開頭波形暫態能量...
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <!-- 視覺化波形放大區間與可拖曳起點游標 -->
-
-
-
-        <div style="margin-bottom: 14px;">
-
-
-
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-
-
-
-            <span id="trimWaveformHeaderLabel" style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">前奏波形視覺放大 — 可直接點擊波形調整起點：</span>
-
-
-
-            <button type="button" class="btn" id="btnAuditionTrim" style="background: #0284c7; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; font-size: 0.82rem; font-weight: 700; cursor: pointer;">🔊 試聽起點 (播 2 秒)</button>
-
-
-
-          </div>
-
-
-
-          <div style="position: relative; width: 100%; height: 95px; background: #070a12; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden;">
-
-
-
-            <canvas id="trimWaveformCanvas" height="95" style="width: 100%; height: 100%; display: block; cursor: crosshair;"></canvas>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <!-- 弱起小節拍數快捷預留 -->
-
-
-
-        <div style="margin-bottom: 16px;">
-
-
-
-          <div style="font-size: 0.84rem; color: #cbd5e1; font-weight: 700; margin-bottom: 8px;">🎵 弱起拍（Pickup）依 BPM 拍數快捷預留：</div>
-
-
-
-          <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="trimPresetButtons">
-
-
-
-            <button type="button" class="trim-preset-btn active" data-preset="tight">⚡ 緊貼起音 (0 拍)</button>
-
-
-
-            <button type="button" class="trim-preset-btn" data-preset="half">留半拍 (搶拍)</button>
-
-
-
-            <button type="button" class="trim-preset-btn" data-preset="1beat">留 1 拍 (末拍進歌)</button>
-
-
-
-            <button type="button" class="trim-preset-btn" data-preset="2beats">留 2 拍</button>
-
-
-
-            <button type="button" class="trim-preset-btn" data-preset="1bar">留 1 小節 (4 拍)</button>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <!-- 毫秒級精確微調控制列 -->
-
-
-
-        <div style="background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-
-
-
-          <div style="display: flex; align-items: center; gap: 8px;">
-
-
-
-            <span style="font-size: 0.88rem; color: #cbd5e1;">起點位置：</span>
-
-
-
-            <input type="number" id="trimManualInput" step="0.005" min="0" max="120" style="width: 85px; background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-family: Consolas, monospace; font-size: 1rem; font-weight: 700; padding: 4px 6px; border-radius: 4px; text-align: center; outline: none;" value="0.000" />
-
-
-
-            <span style="font-size: 0.88rem; color: #94a3b8;">秒</span>
-
-
-
-          </div>
-
-
-
-
-
-
-
-          <div style="display: flex; align-items: center; gap: 5px;">
-
-
-
-            <button type="button" class="btn" id="btnNudgeTrimM50" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點左移 50 毫秒">-50ms</button>
-
-
-
-            <button type="button" class="btn" id="btnNudgeTrimM10" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點左移 10 毫秒">-10ms</button>
-
-
-
-            <button type="button" class="btn" id="btnNudgeTrimP10" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點右移 10 毫秒">+10ms</button>
-
-
-
-            <button type="button" class="btn" id="btnNudgeTrimP50" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點右移 50 毫秒">+50ms</button>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div style="display:flex; justify-content:flex-end; gap:12px;">
-
-
-
-          <button class="btn" id="btnCancelTrimSilence" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
-
-
-
-          <button class="btn btn-primary" id="btnConfirmTrimSilence" style="background:#059669; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">✂️ 確認套用切齊</button>
-
-
-
-        </div>
-
-
-
-      </div>
-
-
-
-    </div>
-
-
-
-  </div>
-
-
-
-
-
-
-
-    <!-- ➕ 自訂新增音軌彈窗 (Add Custom Track Modal) -->
-
-
-
-  <div class="history-modal" id="customTrackModal">
-
-
-
-    <div class="history-modal-content" style="max-width: 560px; border: 1px solid #a855f7; box-shadow: 0 10px 35px rgba(168,85,247,0.35);">
-
-
-
-      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
-
-
-
-        <h3 style="color: #c084fc; display: flex; align-items: center; gap: 8px;">➕ 自訂新增音軌 (Add Custom Track)</h3>
-
-
-
-        <button class="btn-close" id="btnCloseCustomTrack">&times;</button>
-
-
-
-      </div>
-
-
-
-      <div style="padding: 24px;">
-
-
-
-        <div id="customTrackProjectHint" style="display:none; color:#c084fc; font-size:0.85rem; margin-bottom:12px; background:rgba(168,85,247,0.12); padding:8px 12px; border-radius:6px; border:1px solid rgba(168,85,247,0.3);"></div>
-
-
-
-        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
-
-
-
-          可匯入您自己的錄音（如人聲、外接吉他、自錄伴奏、效果聲），立即加入當前 WebAudio 多軌混音台，支援即時波形預覽、推子控制、消音剪輯與一鍵合併匯出：
-
-
-
-        </p>
-
-
-
-
-
-
-
-        <!-- 檔案選擇區域 -->
-
-
-
-        <div style="margin-bottom: 16px;">
-
-
-
-          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:8px;">選擇音訊檔案 (支援 WAV / MP3 / FLAC / M4A / OGG / AAC 等)：</label>
-
-
-
-          <div id="customTrackDropzone" style="border: 2px dashed #a855f7; border-radius: 8px; padding: 18px; text-align: center; background: rgba(168,85,247,0.06); cursor: pointer; transition: all 0.2s;">
-
-
-
-            <div style="font-size: 1.8rem; margin-bottom: 6px;">📂</div>
-
-
-
-            <div id="customTrackFileLabel" style="color: #e2e8f0; font-weight: 600; font-size: 0.95rem;">點擊此處瀏覽檔案，或將音訊直接拖放到此處</div>
-
-
-
-            <div style="color: #94a3b8; font-size: 0.8rem; margin-top: 4px;">無大小限制，自動由 32-bit SIMD 引擎轉換對齊</div>
-
-
-
-          </div>
-
-
-
-          <input type="file" id="customTrackFileInput" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aac" style="display:none;" />
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <!-- 本機檔案路徑 (可選) -->
-
-
-
-        <div style="margin-bottom: 16px;">
-
-
-
-          <label style="display:block; color:#94a3b8; font-size:0.82rem; margin-bottom:6px;">或輸入電腦本機絕對路徑 (免上傳極速載入)：</label>
-
-
-
-          <input type="text" id="customTrackLocalPathInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #334155; color:#cbd5e1; padding:8px 12px; border-radius:6px; font-size:0.88rem; outline:none;" placeholder="例如：D:\Recordings\Guitar_Take_01.wav" />
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <!-- 音軌名稱 -->
-
-
-
-        <div style="margin-bottom: 16px;">
-
-
-
-          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">音軌顯示名稱：</label>
-
-
-
-          <input type="text" id="customTrackNameInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #475569; color:#f8fafc; padding:10px 12px; border-radius:6px; font-size:0.95rem; outline:none;" placeholder="例如：木吉他 Solo (Guitar)" />
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div style="display: flex; gap: 16px; margin-bottom: 22px;">
-
-
-
-          <!-- 分類 -->
-
-
-
-          <div style="flex: 1;">
-
-
-
-            <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">所屬群組 (Reaper Bus 分類)：</label>
-
-
-
-            <select id="customTrackCategorySelect" style="width:100%; background:#0b1120; border:1px solid #475569; color:#f8fafc; padding:9px 12px; border-radius:6px; font-size:0.9rem; outline:none;">
-
-
-
-              <option value="自訂音軌" selected>自訂音軌 (Custom)</option>
-
-
-
-              <option value="Vocals">人聲組 (Vocals)</option>
-
-
-
-              <option value="Guitars">吉他組 (Guitars)</option>
-
-
-
-              <option value="Keys">鍵盤組 (Keys/Piano)</option>
-
-
-
-              <option value="Bass">貝斯組 (Bass)</option>
-
-
-
-              <option value="Drums">鼓組 (Drums)</option>
-
-
-
-              <option value="Other Tracks">其他音軌 (Other Tracks)</option>
-
-
-
-            </select>
-
-
-
-          </div>
-
-
-
-
-
-
-
-          <!-- 配色挑選 -->
-
-
-
-          <div style="flex: 1;">
-
-
-
-            <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">波形專屬顏色：</label>
-
-
-
-            <div style="display:flex; align-items:center; gap:8px;">
-
-
-
-              <input type="color" id="customTrackColorInput" value="#a855f7" style="width:40px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; background:transparent;" />
-
-
-
-              <div class="custom-color-presets" style="display:flex; gap:5px;">
-
-
-
-                <span class="color-dot" data-color="#f43f5e" style="background:#f43f5e; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
-
-
-
-                <span class="color-dot" data-color="#a855f7" style="background:#a855f7; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
-
-
-
-                <span class="color-dot" data-color="#06b6d4" style="background:#06b6d4; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
-
-
-
-                <span class="color-dot" data-color="#10b981" style="background:#10b981; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
-
-
-
-                <span class="color-dot" data-color="#f59e0b" style="background:#f59e0b; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
-
-
-
-                <span class="color-dot" data-color="#ec4899" style="background:#ec4899; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
-
-
-
-              </div>
-
-
-
-            </div>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div style="display:flex; justify-content:flex-end; gap:12px;">
-
-
-
-          <button class="btn" id="btnCancelCustomTrack" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
-
-
-
-          <button class="btn btn-primary" id="btnConfirmCustomTrack" style="background:linear-gradient(135deg, #a855f7, #7c3aed); color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(168,85,247,0.4);">✨ 建立並載入音軌</button>
-
-
-
-        </div>
-
-
-
-      </div>
-
-
-
-    </div>
-
-
-
-  </div>
-
-
-
-
-
-
-
-  <script src="/js/webaudio-daw.js?v=55"></script>
-
-
-
-
-
-
-
-  <div id="dragOffsetBadge" class="drag-offset-badge">↔️ +0.0 ms</div>
-
-
-
-</body>
-
-
-
+<!DOCTYPE html>
+
+
+
+
+
+
+
+<html lang="zh-Hant">
+
+
+
+
+
+
+
+<head>
+
+
+
+
+
+
+
+  <meta charset="UTF-8" />
+
+
+
+
+
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+
+
+
+
+
+
+  <title>StemForge Studio — .NET 9 極限精細音軌分離與多軌同步混音工作站</title>
+
+
+
+
+
+
+
+  <link rel="stylesheet" href="/css/daw.css?v=59" />
+
+
+
+
+
+
+
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" />
+
+
+
+
+
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png?v=1" />
+
+
+
+
+
+
+
+  <link rel="apple-touch-icon" href="/images/logo.png?v=1" />
+
+
+
+
+
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+
+
+
+
+
+
+
+</head>
+
+
+
+
+
+
+
+<body>
+
+
+
+
+
+
+
+  <!-- 頂部系統與硬體狀態列 -->
+
+
+
+
+
+
+
+  <header class="topbar">
+
+
+
+
+
+
+
+    <div class="brand">
+
+
+
+
+
+
+
+      <img src="/images/logo.png?v=1" alt="StemForge Studio" class="brand-logo" />
+
+
+
+
+
+
+
+      <span class="brand-badge">STEMFORGE v2.2 (.NET 9)</span>
+
+
+
+
+
+
+
+      <h1>極限精細音軌分離工作站 <small>19+ Stems Hierarchical DAG + Waveform-Playlist WebAudio Mixer</small></h1>
+
+
+
+
+
+
+
+    </div>
+
+
+
+
+
+
+
+    <div class="hw-badges" id="hwStatusContainer">
+
+
+
+
+
+
+
+      <div class="hw-pill"><span class="dot green"></span><span id="gpuNameText">檢測中...</span></div>
+
+
+
+
+
+
+
+      <div class="hw-pill">VRAM: <strong id="vramUsageText">-- / -- MB</strong></div>
+
+
+
+
+
+
+
+      <div class="hw-pill">磁碟可用: <strong id="diskFreeText">-- GB</strong></div>
+
+
+
+
+
+
+
+      <div class="hw-pill" id="engineModePill">AI CLI + C# SIMD Ready</div>
+
+
+
+
+
+
+
+      <a href="/docs/USER_GUIDE.html" target="_blank" class="hw-pill" style="text-decoration: none; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700; cursor: pointer;" title="在新分頁開啟完整使用手冊">📖 使用手冊</a>
+
+
+
+
+
+
+
+    </div>
+
+
+
+
+
+
+
+  </header>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <div class="workspace-grid">
+
+
+
+
+
+
+
+    <!-- 左側控制面板：音源輸入 + 模式選擇 + 19軌互動式分軌樹 -->
+
+
+
+
+
+
+
+    <aside class="sidebar">
+
+
+
+
+
+
+
+      <section class="panel-card">
+
+
+
+
+
+
+
+        <div class="panel-title">1. 音源載入 (MP3 / WAV / FLAC / MP4 影片)</div>
+
+
+
+
+
+
+
+        <div class="dropzone" id="dropzone">
+
+
+
+
+
+
+
+          <input type="file" id="audioFileInput" accept=".mp3,.wav,.flac,.m4a,.ogg,.mp4,.mkv,.mov,.m4v,.webm" hidden />
+
+
+
+
+
+
+
+          <div class="drop-icon">🎵</div>
+
+
+
+
+
+
+
+          <div id="selectedFileLabel" class="drop-title">點擊選擇或拖曳音樂 / 影片檔案至此</div>
+
+
+
+
+
+
+
+          <div class="drop-sub">支援 MP3 / WAV / FLAC 及 MP4 / MKV / MOV 影片（自動抽離音訊），32-bit Float 雙聲道處理</div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div class="local-path-box">
+
+
+
+
+
+
+
+          <input type="text" id="localPathInput" placeholder="或直接貼上本機檔案路徑 (如 D:\music\song.mp3 或 video.mp4)" />
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 🎧 音源即時試聽播放器 (Pre-listen Player) -->
+
+
+
+
+
+
+
+        <div class="audio-preview-card" id="audioPreviewCard" style="display: none;">
+
+
+
+
+
+
+
+          <div class="preview-header">
+
+
+
+
+
+
+
+            <span class="preview-badge">🎧 音源試聽</span>
+
+
+
+
+
+
+
+            <span class="preview-filename" id="previewFileName" title="預聽檔案名稱">--</span>
+
+
+
+
+
+
+
+            <span class="preview-time" id="previewTimeText">00:00 / 00:00</span>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+          <div class="preview-controls">
+
+
+
+
+
+
+
+            <button type="button" class="btn-preview-play" id="btnPreviewPlay" title="播放 / 暫停試聽">▶ 播放試聽</button>
+
+
+
+
+
+
+
+            <input type="range" class="preview-scrubber" id="previewScrubber" min="0" max="100" step="0.1" value="0" title="拖曳時間軸進度" />
+
+
+
+
+
+
+
+            <div class="preview-vol-wrap">
+
+
+
+
+
+
+
+              <span class="preview-vol-icon" id="previewMuteIcon" title="點擊切換靜音">🔊</span>
+
+
+
+
+
+
+
+              <input type="range" class="preview-vol" id="previewVolume" min="0" max="1" step="0.05" value="0.9" title="試聽音量" />
+
+
+
+
+
+
+
+            </div>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+          <audio id="previewAudioElement" preload="metadata" style="display:none;"></audio>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div class="action-row">
+
+
+
+
+
+
+
+          <button class="btn btn-primary" id="btnStartSeparate">🚀 開始精細分軌</button>
+
+
+
+
+
+
+
+          <button class="btn btn-secondary" id="btnOpenHistory" title="載入之前已完成分軌的歷史專案">📂 載入歷史專案</button>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      <section class="panel-card">
+
+
+
+
+
+
+
+        <div class="panel-title">
+
+
+
+
+
+
+
+          <span>2. 分離與相位守恆模式</span>
+
+
+
+
+
+
+
+          <span class="badge-instant">支援0秒即時切換</span>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+        <select id="separationModeSelect" class="daw-select">
+
+
+
+
+
+
+
+          <option value="BitAccurateResidual" selected>100% 能量守恆 (獨立第19軌 Residual，Null Test = -144dB)</option>
+
+
+
+
+
+
+
+          <option value="BitAccurateProportional">100% 能量守恆 (殘差按能量比例回填各軌，無額外殘差軌)</option>
+
+
+
+
+
+
+
+          <option value="PureIsolation">扒帶 / 抓譜模式 (Pure Isolation 軟閘門消除串音)</option>
+
+
+
+
+
+
+
+          <option value="AiTrainingDry">AI 訓練 / 採樣模式 (極致去殘響 + 去底噪 + -1dBFS 正規化)</option>
+
+
+
+
+
+
+
+        </select>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div class="options-grid">
+
+
+
+
+
+
+
+          <label class="chk-label"><input type="checkbox" id="chkFp16" checked /> RTX 4050 FP16 半精度加速</label>
+
+
+
+
+
+
+
+          <label class="chk-label"><input type="checkbox" id="chkAutoMidi" /> 分離時自動轉出全軌 MIDI</label>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      <section class="panel-card tree-card">
+
+
+
+
+
+
+
+        <div class="panel-title">
+
+
+
+
+
+
+
+          <span>3. 階層式分軌樹勾選 (DAG 19+ Stems)</span>
+
+
+
+
+
+
+
+          <span id="selectedCountBadge" class="count-pill">18 軌</span>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+        <div class="preset-btns" id="presetBtnsContainer">
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="all">全選 18 軌</button>
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="none">清空 0 軌</button>
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="vocals">人聲極致 5 軌</button>
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="drums">DrumSep 鼓組 6 軌</button>
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="rhythm">節奏組 (鼓+Bass)</button>
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="inst">吉他/管弦細分</button>
+
+
+
+
+
+
+
+          <button class="btn-xs" data-preset="karaoke">KTV 伴唱 (去主唱)</button>
+
+
+
+
+
+
+
+          <button class="btn-xs btn-add" id="btnSaveCustomPreset" title="將目前勾選的音軌組合儲存為你自己的預設按鈕">+ 儲存自訂組合</button>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div id="dagTreeContainer" class="dag-tree-list"></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- AudioSep 自然語言指定樂器抽離 -->
+
+
+
+
+
+
+
+        <div class="audiosep-box">
+
+
+
+
+
+
+
+          <div class="sub-label">🎯 AudioSep 文字提示額外抽離樂器 (選填)</div>
+
+
+
+
+
+
+
+          <div class="prompt-input-row">
+
+
+
+
+
+
+
+            <input type="text" id="promptInput" placeholder="輸入英文樂器如 violin, saxophone, flute..." />
+
+
+
+
+
+
+
+            <button class="btn-xs btn-add" id="btnAddPrompt">+ 新增</button>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+          <div class="prompt-tags" id="promptTagsContainer">
+
+
+
+
+
+
+
+            <span class="prompt-chip" data-prompt="violin">violin <b class="rm-chip">×</b></span>
+
+
+
+
+
+
+
+            <span class="prompt-chip" data-prompt="brass">brass <b class="rm-chip">×</b></span>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </section>
+
+
+
+
+
+
+
+    </aside>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- 右側主控台：進度監控 + Master Transport + 多軌同步 DAW 混音器 -->
+
+
+
+
+
+
+
+    <main class="main-stage">
+
+
+
+
+
+
+
+      <!-- 即時進度與節點快取狀態列 -->
+
+
+
+
+
+
+
+      <!-- 即時進度與節點快取狀態列（超緊湊頂部指示條，高度僅 22px） -->
+
+
+
+
+
+
+
+      <section class="progress-banner" id="progressBanner">
+
+
+
+
+
+
+
+        <div class="progress-header">
+
+
+
+
+
+
+
+          <div class="progress-info-line">
+
+
+
+
+
+
+
+            <span class="stage-tag" id="progressStageTag">READY</span>
+
+
+
+
+
+
+
+            <strong id="progressTitleText">等待啟動分軌任務...（請於左側上傳音訊/影片或載入歷史專案）</strong>
+
+
+
+
+
+
+
+            <span class="progress-sub-divider">|</span>
+
+
+
+
+
+
+
+            <span class="progress-sub" id="progressSubText">系統平時不佔用任何背景 Python 程序；僅在執行分離時一次性呼叫並自動釋放 100% 顯存。</span>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+          <span class="pct-num" id="progressPctText">0%</span>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+        <div class="progress-track">
+
+
+
+
+
+
+
+          <div class="progress-fill" id="progressBarFill" style="width: 0%"></div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      <!-- DAW 多軌同步混音控制器 (Master Transport & Null Test) - 完美平衡 3 行專業佈局 (寬度控制在 950px 內，絕不跑出螢幕) -->
+
+
+
+
+
+
+
+      <section class="transport-bar">
+
+        <!-- 第 1 行：走帶播放 + 節拍器預拍 + ✂️ 片段剪輯 + ⚡ 自動切齊開頭 + 時間碼 (全行精確控制在 980px 內，安全不溢出) -->
+
+        <div class="transport-row transport-row-primary">
+
+          <div class="transport-group-left">
+
+            <button class="t-btn t-play" id="btnPlayPause" disabled>▶ 播放</button>
+
+            <button class="t-btn" id="btnStop" disabled>⏹ 停止</button>
+
+            <button class="t-btn" id="btnSoloClear" disabled title="一鍵解除所有分軌的 Solo 獨奏與 Mute 靜音狀態">解除全 Solo/Mute</button>
+
+            <button class="t-btn t-nulltest" id="btnNullTest" disabled title="將所有分軌總和與原始母帶反相 (-180°) 疊加播放，驗證 100% 能量守恆與殘差">
+
+              Ø 反相抵消
+
+            </button>
+
+
+
+            <span class="toolbar-sep">|</span>
+
+
+
+            <!-- 🔔 節拍器與預拍一小節控制組 (Metronome & Count-in) -->
+
+            <div class="metronome-control-box" id="metronomeControlBox">
+
+              <label class="metro-toggle-label" title="播放前先空 1 小節（4 拍預備拍），第一拍高音重音，抓準節奏再切入音樂">
+
+                <input type="checkbox" id="chkCountIn" />
+
+                <span>⏳ 預拍1小節</span>
+
+              </label>
+
+              <select id="selCountInPickup" class="metro-select" title="弱起拍進歌點：設定音樂在預備小節的第幾拍進場發聲" style="display: none;">
+
+                <option value="0">🎯 第 1 拍 (正拍)</option>
+
+                <option value="0.5">🎵 倒數半拍 (搶拍)</option>
+
+                <option value="1">🎵 第 4 拍</option>
+
+                <option value="2">🎵 第 3 拍</option>
+
+              </select>
+
+              <label class="metro-toggle-label" title="播放時依照歌曲 BPM 速度同步敲打節拍器">
+
+                <input type="checkbox" id="chkMetronome" />
+
+                <span>🔔 節拍器</span>
+
+              </label>
+
+              <span class="metro-beat-indicator" id="metroBeatIndicator" title="節拍器對拍閃爍燈">●</span>
+
+            </div>
+
+
+
+            <span class="toolbar-sep">|</span>
+
+
+
+            <!-- ✂️ 片段剪輯與編曲工具箱 + ⚡ 自動切齊開頭 (超顯眼亮綠色，保證 100% 完整可見) -->
+
+            <div class="edit-tools-panel" id="editToolsPanel">
+
+              <span class="tools-label">剪輯:</span>
+
+              <button class="edit-tool-btn active" id="btnToolPointer" title="一般選取/跳轉播放模式 (快速鍵: 1)">🖐️ 選取</button>
+
+              <button class="edit-tool-btn" id="btnToolDrag" title="拖曳平移對齊模式：在波形上按住左右拖曳即可自由滑動對齊節奏 (快速鍵: 2)">↔️ 拖曳</button>
+
+              <button class="edit-tool-btn" id="btnToolScissors" title="剪刀模式：在任何波形上點擊即可切開片段 (快速鍵: 3)">✂️ 剪刀</button>
+
+              <button class="edit-tool-btn" id="btnToolMute" title="片段消音模式：點擊片段即可局部消音/恢復 (快速鍵: 4)">🔇 消音</button>
+
+              <button class="edit-tool-btn btn-tool-reset" id="btnResetClips" title="還原所有分軌之裁切片段與平移">⟲</button>
+
+              <span class="toolbar-sep">|</span>
+
+              <label class="nudge-step-label" title="設定音軌 ◀ / ▶ 按鈕微調步進量 (可選 0.5ms ~ 50ms)">
+
+                <span>步進:</span>
+
+                <select id="selNudgeStep" class="nudge-step-select">
+
+                  <option value="0.0005">0.5ms</option>
+
+                  <option value="0.001" selected>1ms</option>
+
+                  <option value="0.002">2ms</option>
+
+                  <option value="0.005">5ms</option>
+
+                  <option value="0.010">10ms</option>
+
+                  <option value="0.020">20ms</option>
+
+                  <option value="0.050">50ms</option>
+
+                </select>
+
+              </label>
+
+              <span class="toolbar-sep">|</span>
+
+              <button class="edit-tool-btn btn-tool-trim" id="btnAutoTrimSilence" title="AI 自動偵測開頭無音訊靜音，智慧對齊第 1 拍（自動識別弱起拍/半拍起音）">⚡ 自動切齊開頭</button>
+
+              <button class="edit-tool-btn btn-tool-reset" id="btnResetTrim" style="display: none;" title="恢復原始開頭位置">⟲ 恢復原點</button>
+
+            </div>
+
+          </div>
+
+
+
+          <!-- 右側：時間碼 -->
+
+          <div class="timecode-box">
+
+            <span id="currentTimeText">00:00.000</span>
+
+            <span class="sep">/</span>
+
+            <span id="totalTimeText">00:00.000</span>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- 第 2 行：AI 變調 + AI 變速 + Master 總音量與 Null 誤差 (全行寬度緊湊優化在 960px 內，絕不切邊) -->
+
+        <div class="transport-row transport-row-tuning">
+
+          <div class="transport-group-left">
+
+            <!-- AI 神經變調控制組 -->
+
+            <div class="pitch-shift-panel" id="pitchShiftPanel">
+
+              <div class="pitch-key-info">
+
+                <div style="position: relative; display: inline-flex; align-items: center;">
+
+                  <span class="pitch-badge-orig" id="detectedKeyBadge" title="點擊直接修改原調（以大調為主）" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原調: -- ▾</span>
+
+                  <select id="keyOverrideSelect" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;" title="點擊選擇原調 (以大調為主)">
+
+                    <option value="" disabled selected>-- 選擇原調 --</option>
+
+                    <optgroup label="🎵 常用大調 (Major)">
+
+                      <option value="C Major|C 大調 (C Major)">C 大調 (C Major)</option>
+
+                      <option value="C# Major|C# / Db 大調 (C# Major)">C# / Db 大調</option>
+
+                      <option value="D Major|D 大調 (D Major)">D 大調 (D Major)</option>
+
+                      <option value="D# Major|D# / Eb 大調 (Eb Major)">D# / Eb 大調</option>
+
+                      <option value="E Major|E 大調 (E Major)">E 大調 (E Major)</option>
+
+                      <option value="F Major|F 大調 (F Major)">F 大調 (F Major)</option>
+
+                      <option value="F# Major|F# / Gb 大調 (F# Major)">F# / Gb 大調</option>
+
+                      <option value="G Major|G 大調 (G Major)">G 大調 (G Major)</option>
+
+                      <option value="G# Major|G# / Ab 大調 (Ab Major)">G# / Ab 大調</option>
+
+                      <option value="A Major|A 大調 (A Major)">A 大調 (A Major)</option>
+
+                      <option value="A# Major|A# / Bb 大調 (Bb Major)">A# / Bb 大調</option>
+
+                      <option value="B Major|B 大調 (B Major)">B 大調 (B Major)</option>
+
+                    </optgroup>
+
+                    <optgroup label="🎼 小調 (Minor)">
+
+                      <option value="A Minor|A 小調 (A Minor)">A 小調 (A Minor)</option>
+
+                      <option value="E Minor|E 小調 (E Minor)">E 小調 (E Minor)</option>
+
+                      <option value="B Minor|B 小調 (B Minor)">B 小調 (B Minor)</option>
+
+                      <option value="F# Minor|F# 小調 (F# Minor)">F# 小調 (F# Minor)</option>
+
+                      <option value="C# Minor|C# 小調 (C# Minor)">C# 小調 (C# Minor)</option>
+
+                      <option value="G# Minor|G# 小調 (G# Minor)">G# 小調 (G# Minor)</option>
+
+                      <option value="D# Minor|D# 小調 (D# Minor)">D# 小調 (D# Minor)</option>
+
+                      <option value="D Minor|D 小調 (D Minor)">D 小調 (D Minor)</option>
+
+                      <option value="G Minor|G 小調 (G Minor)">G 小調 (G Minor)</option>
+
+                      <option value="C Minor|C 小調 (C Minor)">C 小調 (C Minor)</option>
+
+                      <option value="F Minor|F 小調 (F Minor)">F 小調 (F Minor)</option>
+
+                      <option value="A# Minor|A# / Bb 小調 (Bb Minor)">A# / Bb 小調</option>
+
+                    </optgroup>
+
+                  </select>
+
+                </div>
+
+                <span class="pitch-arrow">➔</span>
+
+                <span class="pitch-badge-target" id="targetKeyBadge" title="當前變調目標調性">目標: 原調 (0)</span>
+
+              </div>
+
+              <div class="pitch-controls-row">
+
+                <button class="pitch-step-btn" id="btnPitchDown" title="降 1 個半音">-1</button>
+
+                <input type="range" id="pitchShiftSlider" min="-6" max="6" step="1" value="0" title="升降 Key (±6 半音)" />
+
+                <button class="pitch-step-btn" id="btnPitchUp" title="升 1 個半音">+1</button>
+
+                <span class="pitch-value-label" id="pitchValueLabel">0 半音</span>
+
+                <button class="btn-xs btn-pitch-apply" id="btnApplyPitch" title="確定並執行神經變調">⚡ 套用變調</button>
+
+                <button class="btn-xs btn-pitch-reset" id="btnResetPitch" title="一鍵重設回原調 (0 半音)">⟲ 恢復原調</button>
+
+              </div>
+
+            </div>
+
+
+
+            <span class="toolbar-sep">|</span>
+
+
+
+            <!-- AI 時間軸拍速控制組 -->
+
+            <div class="tempo-panel" id="tempoPanel">
+
+              <div class="tempo-info">
+
+                <span class="tempo-badge-orig" id="detectedBpmBadge" title="點擊修改歌曲原速 BPM (將同步更新時間軸與 Reaper 節拍網格)" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; user-select: none;">原速: -- BPM</span>
+
+                <span class="tempo-arrow">➔</span>
+
+                <span class="tempo-badge-target" id="targetBpmBadge" title="當前目標拍速">目標: 原速</span>
+
+              </div>
+
+              <div class="tempo-controls-row">
+
+                <button class="tempo-step-btn" id="btnTempoDown" title="減少 1 BPM">-1</button>
+
+                <input type="range" id="tempoSlider" min="50" max="220" step="1" value="120" title="調整拍速 (BPM)" />
+
+                <button class="tempo-step-btn" id="btnTempoUp" title="增加 1 BPM">+1</button>
+
+                <span class="tempo-value-label" id="tempoValueLabel">120 BPM</span>
+
+                <button class="btn-xs btn-tempo-apply" id="btnApplyTempo" title="確定並執行 21 軌無損時間軸變速">⚡ 套用新拍速</button>
+
+                <button class="btn-xs btn-tempo-reset" id="btnResetTempo" title="一鍵重設回原速">⟲ 恢復原速</button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+
+          <!-- 右側：Master 推子與 Null 誤差 (安全預留超寬裕空間，絕對不跑出邊界) -->
+
+          <div class="master-fader-box">
+
+            <label>Master</label>
+
+            <input type="range" id="masterVolumeSlider" min="0" max="1.2" step="0.01" value="1.0" />
+
+            <span id="nullCancellationBadge" class="null-badge" title="所有分軌相加與原曲的最大相位誤差">Null 誤差: -- dBFS</span>
+
+          </div>
+
+        </div>
+
+
+
+        <!-- 第 3 行：工程管理與多軌匯出 (兩端對齊，整齊大器) -->
+
+        <div class="transport-row transport-row-export export-actions">
+
+          <div class="export-group-left">
+
+            <button class="btn btn-select-toggle" id="btnSelectAllTracks" disabled title="一鍵打勾選取全部音軌">☑️ 全選</button>
+
+            <button class="btn btn-select-toggle" id="btnClearAllTracks" disabled title="一鍵清空所有音軌勾選">⬜ 全清</button>
+
+            <button class="btn btn-add-custom-track" id="btnAddCustomTrack" title="自訂新增音軌 (可上傳 WAV / MP3 / FLAC / M4A 或錄音檔加入此混音專案)">➕ 新增自訂音軌</button>
+
+            <span class="toolbar-sep">|</span>
+
+            <button class="btn btn-save" id="btnSaveProject" disabled title="直接儲存當前專案之消音與剪輯狀態 (快速鍵: Ctrl + S)">💾 儲存專案</button>
+
+            <button class="btn btn-save-as" id="btnSaveAsProject" disabled title="將當前工程另存為全新專案副本">📑 另存新專案...</button>
+
+          </div>
+
+          <div class="export-group-right">
+
+            <a class="btn btn-reaper disabled" id="btnDownloadRpp" href="#" download>🎛️ 下載 Reaper (.rpp) 工程檔</a>
+
+            <button class="btn btn-zip" id="btnExportZip" disabled title="打包下載全部分軌">📦 打包全軌 ZIP</button>
+
+            <button class="btn btn-zip btn-zip-selected" id="btnExportSelectedZip" disabled title="僅打包勾選的分軌 WAV 檔">📥 下載已勾選分軌 ZIP (<span id="selectedTracksCountText">0</span>)</button>
+
+            <button class="btn btn-mixdown btn-mixdown-wav" id="btnExportMixdownWav" disabled title="將已勾選的所有分軌即時混音為無損 32-bit Float WAV 下載">🎚️ 合併匯出 WAV (<span id="mixdownWavCountText">0</span>)</button>
+
+            <button class="btn btn-mixdown btn-mixdown-mp3" id="btnExportMixdownMp3" disabled title="將已勾選的所有分軌即時混音為 320kbps MP3 下載">🎵 合併匯出 MP3 (<span id="mixdownMp3CountText">0</span>)</button>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      <!-- 全域時間軸進度拖曳條 -->
+
+
+
+
+
+
+
+      <div class="timeline-scrubber" id="timelineScrubber">
+
+
+
+
+
+
+
+        <div class="scrubber-progress" id="scrubberProgress" style="width: 0%"></div>
+
+
+
+
+
+
+
+        <div class="scrubber-head" id="scrubberHead" style="left: 0%"></div>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      <!-- 多軌同步混音台列表 (Channel Strips + Canvas Waveforms) -->
+
+
+
+
+
+
+
+      <section class="mixer-wrapper" id="mixerWrapper">
+
+
+
+
+
+
+
+        <section class="mixer-tracks-container" id="mixerTracksContainer">
+
+
+
+
+
+
+
+          <div class="empty-mixer-state">
+
+
+
+
+
+
+
+            <div class="empty-icon">🎚️</div>
+
+
+
+
+
+
+
+            <h3>多軌同步 DAW 混音台已就緒</h3>
+
+
+
+
+
+
+
+            <p>請在左側上傳音樂檔案，或點擊 <strong>「📂 載入歷史專案」</strong> 快速回播已處理過的分軌。</p>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 處理中半透明變暗遮罩層 (Busy Overlay) -->
+
+
+
+
+
+
+
+        <div class="mixer-busy-overlay" id="mixerBusyOverlay">
+
+
+
+
+
+
+
+          <div class="busy-card">
+
+
+
+
+
+
+
+            <div class="busy-spinner-wrap">
+
+
+
+
+
+
+
+              <div class="busy-spinner-glow"></div>
+
+
+
+
+
+
+
+              <div class="busy-spinner-ring"></div>
+
+
+
+
+
+
+
+              <div class="busy-spinner-icon" id="busySpinnerIcon">⚡</div>
+
+
+
+
+
+
+
+            </div>
+
+
+
+
+
+
+
+            <div class="busy-title" id="busyOverlayTitle">AI 處理中...</div>
+
+
+
+
+
+
+
+            <div class="busy-sub" id="busyOverlaySub">請稍候，正在進行演算...</div>
+
+
+
+
+
+
+
+            <div class="busy-track">
+
+
+
+
+
+
+
+              <div class="busy-fill" id="busyOverlayFill" style="width: 0%"></div>
+
+
+
+
+
+
+
+            </div>
+
+
+
+
+
+
+
+            <div class="busy-pct-text" id="busyOverlayPct">0%</div>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </section>
+
+
+
+
+
+
+
+    </main>
+
+
+
+
+
+
+
+  </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <!-- 歷史專案彈出視窗 Modal -->
+
+
+
+
+
+
+
+  <div class="history-modal" id="historyModal">
+
+
+
+
+
+
+
+    <div class="history-modal-content">
+
+
+
+
+
+
+
+      <div class="history-modal-header">
+
+
+
+
+
+
+
+        <h3>📂 載入已做過的分軌專案</h3>
+
+
+
+
+
+
+
+        <button class="btn-close" id="btnCloseHistory">&times;</button>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+      <div class="history-list" id="historyListContainer">
+
+
+
+
+
+
+
+        <div class="empty-history-text">正在載入本機歷史分軌...</div>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+    </div>
+
+
+
+
+
+
+
+  </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <!-- 另存專案彈窗 (Save As Project Modal) -->
+
+
+
+
+
+
+
+  <div class="history-modal" id="saveAsModal">
+
+
+
+
+
+
+
+    <div class="history-modal-content" style="max-width: 520px; border: 1px solid #3b82f6; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
+
+
+
+
+
+
+
+      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
+
+
+
+
+
+
+
+        <h3 style="color: #60a5fa; display: flex; align-items: center; gap: 8px;">💾 另存分軌專案 (Save As Project)</h3>
+
+
+
+
+
+
+
+        <button class="btn-close" id="btnCloseSaveAs">&times;</button>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+      <div style="padding: 24px;">
+
+
+
+
+
+
+
+        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
+
+
+
+
+
+
+
+          系統將為您建立一個獨立的新專案副本，完整保留目前的 <strong>消音剪輯、時間軸變速、變調設定與所有分軌</strong>：
+
+
+
+
+
+
+
+        </p>
+
+
+
+
+
+
+
+        <div style="margin-bottom: 22px;">
+
+
+
+
+
+
+
+          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:8px;">新專案名稱：</label>
+
+
+
+
+
+
+
+          <input type="text" id="saveAsProjectNameInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #3b82f6; color:#f8fafc; padding:12px 14px; border-radius:8px; font-size:1rem; outline:none;" placeholder="例如：告五人 - 披星戴月的想你 (修剪版)" />
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+
+
+
+
+
+
+
+          <button class="btn" id="btnCancelSaveAs" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
+
+
+
+
+
+
+
+          <button class="btn btn-primary" id="btnConfirmSaveAs" style="background:#2563eb; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">💾 確認另存新專案</button>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+    </div>
+
+
+
+
+
+
+
+  </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <!-- ✂️ AI 自動切齊開頭靜音彈窗 (Auto Trim Silence Modal) -->
+
+
+
+
+
+
+
+  <div class="history-modal" id="trimSilenceModal">
+
+
+
+
+
+
+
+    <div class="history-modal-content" style="max-width: 680px; border: 1px solid #10b981; box-shadow: 0 10px 35px rgba(0,0,0,0.7);">
+
+
+
+
+
+
+
+      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
+
+
+
+
+
+
+
+        <h3 style="color: #34d399; display: flex; align-items: center; gap: 8px;">✂️ 精確切齊開頭靜音與弱起拍設定</h3>
+
+
+
+
+
+
+
+        <button class="btn-close" id="btnCloseTrimSilence">&times;</button>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+      <div style="padding: 20px 24px;">
+
+
+
+
+
+
+
+        <div id="trimDetectInfo" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; color: #a7f3d0; font-size: 0.88rem; margin-bottom: 14px; line-height: 1.45;">
+
+
+
+
+
+
+
+          正在掃描開頭波形暫態能量...
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 視覺化波形放大區間與可拖曳起點游標 -->
+
+
+
+
+
+
+
+        <div style="margin-bottom: 14px;">
+
+
+
+
+
+
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+
+
+
+
+
+
+
+            <span id="trimWaveformHeaderLabel" style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">前奏波形視覺放大 — 可直接點擊波形調整起點：</span>
+
+
+
+
+
+
+
+            <button type="button" class="btn" id="btnAuditionTrim" style="background: #0284c7; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; font-size: 0.82rem; font-weight: 700; cursor: pointer;">🔊 試聽起點 (播 2 秒)</button>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+          <div style="position: relative; width: 100%; height: 95px; background: #070a12; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden;">
+
+
+
+
+
+
+
+            <canvas id="trimWaveformCanvas" height="95" style="width: 100%; height: 100%; display: block; cursor: crosshair;"></canvas>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 弱起小節拍數快捷預留 -->
+
+
+
+
+
+
+
+        <div style="margin-bottom: 16px;">
+
+
+
+
+
+
+
+          <div style="font-size: 0.84rem; color: #cbd5e1; font-weight: 700; margin-bottom: 8px;">🎵 弱起拍（Pickup）依 BPM 拍數快捷預留：</div>
+
+
+
+
+
+
+
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="trimPresetButtons">
+
+
+
+
+
+
+
+            <button type="button" class="trim-preset-btn active" data-preset="tight">⚡ 緊貼起音 (0 拍)</button>
+
+
+
+
+
+
+
+            <button type="button" class="trim-preset-btn" data-preset="half">留半拍 (搶拍)</button>
+
+
+
+
+
+
+
+            <button type="button" class="trim-preset-btn" data-preset="1beat">留 1 拍 (末拍進歌)</button>
+
+
+
+
+
+
+
+            <button type="button" class="trim-preset-btn" data-preset="2beats">留 2 拍</button>
+
+
+
+
+
+
+
+            <button type="button" class="trim-preset-btn" data-preset="1bar">留 1 小節 (4 拍)</button>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 毫秒級精確微調控制列 -->
+
+
+
+
+
+
+
+        <div style="background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+
+
+
+
+
+
+
+          <div style="display: flex; align-items: center; gap: 8px;">
+
+
+
+
+
+
+
+            <span style="font-size: 0.88rem; color: #cbd5e1;">起點位置：</span>
+
+
+
+
+
+
+
+            <input type="number" id="trimManualInput" step="0.005" min="0" max="120" style="width: 85px; background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-family: Consolas, monospace; font-size: 1rem; font-weight: 700; padding: 4px 6px; border-radius: 4px; text-align: center; outline: none;" value="0.000" />
+
+
+
+
+
+
+
+            <span style="font-size: 0.88rem; color: #94a3b8;">秒</span>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <div style="display: flex; align-items: center; gap: 5px;">
+
+
+
+
+
+
+
+            <button type="button" class="btn" id="btnNudgeTrimM50" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點左移 50 毫秒">-50ms</button>
+
+
+
+
+
+
+
+            <button type="button" class="btn" id="btnNudgeTrimM10" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點左移 10 毫秒">-10ms</button>
+
+
+
+
+
+
+
+            <button type="button" class="btn" id="btnNudgeTrimP10" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點右移 10 毫秒">+10ms</button>
+
+
+
+
+
+
+
+            <button type="button" class="btn" id="btnNudgeTrimP50" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:4px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;" title="起點右移 50 毫秒">+50ms</button>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+
+
+
+
+
+
+
+          <button class="btn" id="btnCancelTrimSilence" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
+
+
+
+
+
+
+
+          <button class="btn btn-primary" id="btnConfirmTrimSilence" style="background:#059669; color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer;">✂️ 確認套用切齊</button>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+    </div>
+
+
+
+
+
+
+
+  </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- ➕ 自訂新增音軌彈窗 (Add Custom Track Modal) -->
+
+
+
+
+
+
+
+  <div class="history-modal" id="customTrackModal">
+
+
+
+
+
+
+
+    <div class="history-modal-content" style="max-width: 560px; border: 1px solid #a855f7; box-shadow: 0 10px 35px rgba(168,85,247,0.35);">
+
+
+
+
+
+
+
+      <div class="history-modal-header" style="border-bottom: 1px solid #1e293b;">
+
+
+
+
+
+
+
+        <h3 style="color: #c084fc; display: flex; align-items: center; gap: 8px;">➕ 自訂新增音軌 (Add Custom Track)</h3>
+
+
+
+
+
+
+
+        <button class="btn-close" id="btnCloseCustomTrack">&times;</button>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+      <div style="padding: 24px;">
+
+
+
+
+
+
+
+        <div id="customTrackProjectHint" style="display:none; color:#c084fc; font-size:0.85rem; margin-bottom:12px; background:rgba(168,85,247,0.12); padding:8px 12px; border-radius:6px; border:1px solid rgba(168,85,247,0.3);"></div>
+
+
+
+
+
+
+
+        <p style="color: #94a3b8; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px;">
+
+
+
+
+
+
+
+          可匯入您自己的錄音（如人聲、外接吉他、自錄伴奏、效果聲），立即加入當前 WebAudio 多軌混音台，支援即時波形預覽、推子控制、消音剪輯與一鍵合併匯出：
+
+
+
+
+
+
+
+        </p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 檔案選擇區域 -->
+
+
+
+
+
+
+
+        <div style="margin-bottom: 16px;">
+
+
+
+
+
+
+
+          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:8px;">選擇音訊檔案 (支援 WAV / MP3 / FLAC / M4A / OGG / AAC 等)：</label>
+
+
+
+
+
+
+
+          <div id="customTrackDropzone" style="border: 2px dashed #a855f7; border-radius: 8px; padding: 18px; text-align: center; background: rgba(168,85,247,0.06); cursor: pointer; transition: all 0.2s;">
+
+
+
+
+
+
+
+            <div style="font-size: 1.8rem; margin-bottom: 6px;">📂</div>
+
+
+
+
+
+
+
+            <div id="customTrackFileLabel" style="color: #e2e8f0; font-weight: 600; font-size: 0.95rem;">點擊此處瀏覽檔案，或將音訊直接拖放到此處</div>
+
+
+
+
+
+
+
+            <div style="color: #94a3b8; font-size: 0.8rem; margin-top: 4px;">無大小限制，自動由 32-bit SIMD 引擎轉換對齊</div>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+          <input type="file" id="customTrackFileInput" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg,.aac" style="display:none;" />
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 本機檔案路徑 (可選) -->
+
+
+
+
+
+
+
+        <div style="margin-bottom: 16px;">
+
+
+
+
+
+
+
+          <label style="display:block; color:#94a3b8; font-size:0.82rem; margin-bottom:6px;">或輸入電腦本機絕對路徑 (免上傳極速載入)：</label>
+
+
+
+
+
+
+
+          <input type="text" id="customTrackLocalPathInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #334155; color:#cbd5e1; padding:8px 12px; border-radius:6px; font-size:0.88rem; outline:none;" placeholder="例如：D:\Recordings\Guitar_Take_01.wav" />
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <!-- 音軌名稱 -->
+
+
+
+
+
+
+
+        <div style="margin-bottom: 16px;">
+
+
+
+
+
+
+
+          <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">音軌顯示名稱：</label>
+
+
+
+
+
+
+
+          <input type="text" id="customTrackNameInput" class="form-input" style="width:100%; box-sizing:border-box; background:#0b1120; border:1px solid #475569; color:#f8fafc; padding:10px 12px; border-radius:6px; font-size:0.95rem; outline:none;" placeholder="例如：木吉他 Solo (Guitar)" />
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div style="display: flex; gap: 16px; margin-bottom: 22px;">
+
+
+
+
+
+
+
+          <!-- 分類 -->
+
+
+
+
+
+
+
+          <div style="flex: 1;">
+
+
+
+
+
+
+
+            <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">所屬群組 (Reaper Bus 分類)：</label>
+
+
+
+
+
+
+
+            <select id="customTrackCategorySelect" style="width:100%; background:#0b1120; border:1px solid #475569; color:#f8fafc; padding:9px 12px; border-radius:6px; font-size:0.9rem; outline:none;">
+
+
+
+
+
+
+
+              <option value="自訂音軌" selected>自訂音軌 (Custom)</option>
+
+
+
+
+
+
+
+              <option value="Vocals">人聲組 (Vocals)</option>
+
+
+
+
+
+
+
+              <option value="Guitars">吉他組 (Guitars)</option>
+
+
+
+
+
+
+
+              <option value="Keys">鍵盤組 (Keys/Piano)</option>
+
+
+
+
+
+
+
+              <option value="Bass">貝斯組 (Bass)</option>
+
+
+
+
+
+
+
+              <option value="Drums">鼓組 (Drums)</option>
+
+
+
+
+
+
+
+              <option value="Other Tracks">其他音軌 (Other Tracks)</option>
+
+
+
+
+
+
+
+            </select>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <!-- 配色挑選 -->
+
+
+
+
+
+
+
+          <div style="flex: 1;">
+
+
+
+
+
+
+
+            <label style="display:block; color:#e2e8f0; font-size:0.88rem; font-weight:700; margin-bottom:6px;">波形專屬顏色：</label>
+
+
+
+
+
+
+
+            <div style="display:flex; align-items:center; gap:8px;">
+
+
+
+
+
+
+
+              <input type="color" id="customTrackColorInput" value="#a855f7" style="width:40px; height:36px; padding:0; border:none; border-radius:6px; cursor:pointer; background:transparent;" />
+
+
+
+
+
+
+
+              <div class="custom-color-presets" style="display:flex; gap:5px;">
+
+
+
+
+
+
+
+                <span class="color-dot" data-color="#f43f5e" style="background:#f43f5e; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+
+
+
+
+
+
+
+                <span class="color-dot" data-color="#a855f7" style="background:#a855f7; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+
+
+
+
+
+
+
+                <span class="color-dot" data-color="#06b6d4" style="background:#06b6d4; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+
+
+
+
+
+
+
+                <span class="color-dot" data-color="#10b981" style="background:#10b981; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+
+
+
+
+
+
+
+                <span class="color-dot" data-color="#f59e0b" style="background:#f59e0b; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+
+
+
+
+
+
+
+                <span class="color-dot" data-color="#ec4899" style="background:#ec4899; width:22px; height:22px; border-radius:50%; cursor:pointer; display:inline-block;"></span>
+
+
+
+
+
+
+
+              </div>
+
+
+
+
+
+
+
+            </div>
+
+
+
+
+
+
+
+          </div>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+
+
+
+
+
+
+
+          <button class="btn" id="btnCancelCustomTrack" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:9px 18px; border-radius:6px; cursor:pointer; font-weight:600;">取消</button>
+
+
+
+
+
+
+
+          <button class="btn btn-primary" id="btnConfirmCustomTrack" style="background:linear-gradient(135deg, #a855f7, #7c3aed); color:#fff; border:none; padding:9px 24px; border-radius:6px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(168,85,247,0.4);">✨ 建立並載入音軌</button>
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+      </div>
+
+
+
+
+
+
+
+    </div>
+
+
+
+
+
+
+
+  </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <script src="/js/webaudio-daw.js?v=55"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <div id="dragOffsetBadge" class="drag-offset-badge">↔️ +0.0 ms</div>
+
+
+
+
+
+
+
+</body>
+
+
+
+
+
+
+
 </html>
