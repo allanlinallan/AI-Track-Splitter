@@ -5388,6 +5388,43 @@ class StemForgeDawApp {
 
 
 
+  
+  updateTempoUiOnly(val) {
+    const origBpm = this.originalBpm || 120;
+    const targetBpm = Math.max(40, Math.min(260, Math.round(val)));
+    if (this.tempoSlider && parseInt(this.tempoSlider.value, 10) !== targetBpm) {
+      this.tempoSlider.value = targetBpm;
+    }
+    if (this.tempoValueLabel) {
+      this.tempoValueLabel.textContent = targetBpm + " BPM";
+    }
+    if (this.targetBpmBadge) {
+      const ratio = targetBpm / origBpm;
+      const isReset = Math.abs(ratio - 1.0) < 0.005;
+      const pctDelta = Math.round((ratio - 1.0) * 100);
+      const signText = pctDelta > 0 ? "+" + pctDelta + "%" : pctDelta + "%";
+      this.targetBpmBadge.textContent = isReset ? "目標: 原速" : "目標: " + targetBpm + " BPM (" + signText + ")";
+    }
+  }
+
+  stepTempoUi(delta) {
+    if (!this.tempoSlider) return;
+    const cur = parseInt(this.tempoSlider.value, 10) || Math.round(this.currentBpm || this.originalBpm || 120);
+    const next = Math.max(40, Math.min(260, cur + delta));
+    if (next !== cur) {
+      this.tempoSlider.value = next;
+      this.updateTempoUiOnly(next);
+    }
+  }
+
+  calcTargetKeyName(origKey, semitones) {
+    return this.calcTransposedKey(origKey, semitones);
+  }
+
+  pause() {
+    this.pausePlayback();
+  }
+
   updatePitchUiOnly(val) {
 
     if (this.pitchValueLabel) {
