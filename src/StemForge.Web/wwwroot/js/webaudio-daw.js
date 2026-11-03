@@ -1953,55 +1953,47 @@ class StemForgeDawApp {
 
 
 
-    // 解碼原曲供 Null Test 反相抵消使用 (加上 timestamp 避免被瀏覽器硬取快取)
+    // 1. 直接精確設定全曲時長 (從後端 Job 結果讀取，絕不依賴母帶解碼)
+    this.durationSec = jobResult.durationSeconds || 180;
+    const totalTimeEl = document.getElementById("totalTimeText");
+    if (totalTimeEl) totalTimeEl.textContent = this.formatTime(this.durationSec);
 
+    // 2. 解碼原曲供 Null Test 反相抵消使用 (安全下載，自帶超輕量備援，絕不呼叫超大 Sample 的 createBuffer)
     try {
-      this.originalMixBuffer = await this.loadAudioBufferSafely(jobResult.sourceAudioUrl, 3);
+      this.originalMixBuffer = await this.loadAudioBufferSafely(jobResult.sourceAudioUrl, 2);
     } catch (e) {
-      console.warn("[DAW] 原曲母帶載入異常:", e);
+      console.warn("[DAW] 原曲母帶載入略過:", e);
     }
     if (!this.originalMixBuffer) {
-      console.warn("[DAW] 原曲母帶載入失敗或不存在，建立靜音備援緩衝區以保證混音台正常運作");
-      const sampleRate = jobResult.sampleRate || 44100;
-      const duration = jobResult.durationSeconds || 180;
-      this.originalMixBuffer = this.audioCtx.createBuffer(2, Math.max(1, Math.floor(duration * sampleRate)), sampleRate);
+      console.warn("[DAW] 原曲母帶未載入，建立安全最小備援 Buffer (44100 樣本)");
+      try {
+        this.originalMixBuffer = this.audioCtx.createBuffer(2, 44100, 44100);
+      } catch (bufErr) {
+        console.warn("[DAW] 建立最小備援 Buffer 異常:", bufErr);
+        this.originalMixBuffer = null;
+      }
     }
 
-    this.durationSec = this.originalMixBuffer.duration;
-
-    document.getElementById("totalTimeText").textContent = this.formatTime(this.durationSec);
-
-
-
-    // 計算原曲母帶之 Peak 與 RMS dBFS
-
-    let origMaxVal = 0;
-
-    let origSumSq = 0;
-
-    const ch0 = this.originalMixBuffer.getChannelData(0);
-
-    const chStep = Math.max(1, Math.floor(ch0.length / 50000));
-
-    let origCnt = 0;
-
-    for (let i = 0; i < ch0.length; i += chStep) {
-
-      const v = Math.abs(ch0[i]);
-
-      if (v > origMaxVal) origMaxVal = v;
-
-      origSumSq += v * v;
-
-      origCnt++;
-
+    // 3. 計算原曲母帶之 Peak 與 RMS dBFS (具備嚴密空值防禦)
+    let origPeakDb = "-0.0";
+    let origRmsDb = "-14.0";
+    if (this.originalMixBuffer && this.originalMixBuffer.length > 0) {
+      try {
+        let origMaxVal = 0;
+        let origSumSq = 0;
+        const ch0 = this.originalMixBuffer.getChannelData(0);
+        const chStep = Math.max(1, Math.floor(ch0.length / 50000));
+        let origCnt = 0;
+        for (let i = 0; i < ch0.length; i += chStep) {
+          const v = Math.abs(ch0[i]);
+          if (v > origMaxVal) origMaxVal = v;
+          origSumSq += v * v;
+          origCnt++;
+        }
+        origPeakDb = origMaxVal > 0 ? (20 * Math.log10(origMaxVal)).toFixed(1) : "-0.0";
+        origRmsDb = origCnt > 0 ? (20 * Math.log10(Math.sqrt(origSumSq / origCnt))).toFixed(1) : "-14.0";
+      } catch {}
     }
-
-    const origPeakDb = origMaxVal > 0 ? (20 * Math.log10(origMaxVal)).toFixed(1) : "-0.0";
-
-    const origRmsDb = origCnt > 0 ? (20 * Math.log10(Math.sqrt(origSumSq / origCnt))).toFixed(1) : "-14.0";
-
-
 
     const originalTrackStem = {
 
