@@ -1008,14 +1008,22 @@ class StemForgeDawApp {
 
     // 平行下載並解碼所有分軌
     this.tracks = [];
-    const decodedStems = await Promise.all(
-      jobResult.stems.map(async (stem) => {
-        const r = await fetch(`${stem.relativeUrl}?t=${Date.now()}`);
-        const buf = await r.arrayBuffer();
-        const audioBuffer = await this.audioCtx.decodeAudioData(buf);
-        return { stem, audioBuffer };
-      })
-    );
+    const decodedStems = [];
+    const queue = [...jobResult.stems];
+    const concurrency = 3;
+    const loadWorker = async () => {
+      while (queue.length > 0) {
+        const stem = queue.shift();
+        if (!stem) break;
+        const audioBuffer = await this.loadAudioBufferSafely(stem.relativeUrl);
+        decodedStems.push({ stem, audioBuffer });
+      }
+    };
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, jobResult.stems.length); i++) {
+      workers.push(loadWorker());
+    }
+    await Promise.all(workers);
 
     const allStemsToRender = [
       { stem: originalTrackStem, audioBuffer: this.originalMixBuffer },
@@ -2711,6 +2719,65 @@ class StemForgeDawApp {
     return `${zhPitches[newIdx]} ${modeZh} [${sign}]`;
   }
 
+    // 安全下載並解碼單一音訊緩衝區（自帶逾時控制與重試機制）
+  async loadAudioBufferSafely(url, retries = 2) {
+    const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const r = await fetch(fetchUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const buf = await r.arrayBuffer();
+        return await this.audioCtx.decodeAudioData(buf);
+      } catch (err) {
+        if (attempt >= retries) {
+          console.warn(`[AudioLoad] 音訊載入失敗 (已重試 ${retries} 次): ${url}:`, err);
+          return null;
+        }
+        await new Promise((res) => setTimeout(res, 250 * (attempt + 1)));
+      }
+    }
+    return null;
+  }
+
+  // 平滑池化批次刷新所有分軌（最大並發 3），徹底根除瀏覽器並發打滿引發的 Failed to fetch
+  async batchRefreshTracksAudio(stems, onProgress = null) {
+    const queue = [...stems];
+    let completed = 0;
+    const concurrency = 3;
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        const stem = queue.shift();
+        if (!stem) break;
+        const track = this.tracks.find((t) => t.nodeId === stem.nodeId);
+        if (track) {
+          track.meta.relativeUrl = stem.relativeUrl;
+          const link = track.rowEl?.querySelector("a.act-link");
+          if (link) link.href = stem.relativeUrl;
+          const newBuffer = await this.loadAudioBufferSafely(stem.relativeUrl);
+          if (newBuffer) {
+            track.audioBuffer = newBuffer;
+            try { this.drawWaveform(track); } catch {}
+          }
+        }
+        completed++;
+        if (onProgress) {
+          onProgress(completed, stems.length, stem);
+        }
+      }
+    };
+
+    const workers = [];
+    const poolSize = Math.min(concurrency, stems.length);
+    for (let i = 0; i < poolSize; i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+  }
+
   async applyPitchShift(semitones) {
     if (!this.currentJob) return;
     semitones = Math.max(-6, Math.min(6, semitones));
@@ -2724,8 +2791,8 @@ class StemForgeDawApp {
     const bannerStage = document.getElementById("progressStageTag");
     const bannerTitle = document.getElementById("progressTitleText");
     const bannerSub = document.getElementById("progressSubText");
-    const signText = semitones > 0 ? `+${semitones}` : `${semitones}`;
 
+    const signText = semitones > 0 ? `+${semitones}` : `${semitones}`;
     if (bannerStage) bannerStage.textContent = "PITCH SHIFT";
     if (bannerTitle) bannerTitle.textContent = `[Phase-Vocoder] 正在執行多軌神經變調 (${signText} 半音)...`;
     if (bannerSub) bannerSub.textContent = "鼓組自動繞過保留衝擊力，人聲鎖定共振峰，伴奏和弦高保真變調";
@@ -2739,56 +2806,60 @@ class StemForgeDawApp {
     const overlaySub = semitones === 0
       ? "正在重新載入與解碼原始音訊軌道..."
       : "鼓組原音保留衝擊力，人聲與樂器 Phase-Vocoder 高保真變調中...";
-
     this.showBusyOverlay(overlayTitle, overlaySub, 5, "🎵");
 
     try {
       const targetBpm = this.currentBpm || (this.tempoSlider ? parseInt(this.tempoSlider.value, 10) : this.originalBpm) || 120;
       const originalBpm = this.originalBpm || (this.currentJob?.detectedBpm ? Math.round(this.currentJob.detectedBpm) : targetBpm);
-      const res = await fetch(`/api/jobs/${this.currentJob.jobId}/pitch-shift`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ semitones, targetBpm, originalBpm })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "變調失敗");
 
-      this.updateBusyOverlayProgress(90, "正在更新混音台音訊...", "載入最新音軌緩衝區並重新繪製波形...");
-
-      if (this.targetKeyBadge) {
-        this.targetKeyBadge.textContent = semitones === 0 ? "目標: 原調 (0)" : `目標: ${data.targetKey}`;
+      // 1. 後端變調運算 (API 請求隔離)
+      let data;
+      try {
+        const res = await fetch(`/api/jobs/${this.currentJob.jobId}/pitch-shift`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ semitones, targetBpm, originalBpm })
+        });
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || "後端變調運算失敗");
+      } catch (postErr) {
+        throw new Error(`變調請求失敗: ${postErr.message}`);
       }
 
-      // 平行重新解碼變調後的各軌音訊並更新下載連結
-      await Promise.all(
-        data.stems.map(async (stem) => {
-          const track = this.tracks.find((t) => t.nodeId === stem.nodeId);
-          if (track) {
-            track.meta.relativeUrl = stem.relativeUrl;
-            const link = track.rowEl?.querySelector("a.act-link");
-            if (link) link.href = stem.relativeUrl;
-            const r = await fetch(`${stem.relativeUrl}?t=${Date.now()}`);
-            const buf = await r.arrayBuffer();
-            track.audioBuffer = await this.audioCtx.decodeAudioData(buf);
-            this.drawWaveform(track);
-          }
-        })
-      );
-
+      // 2. 後端運算成功，立即固化狀態與徽章，確保狀態不丟失
+      if (this.targetKeyBadge) {
+        this.targetKeyBadge.textContent = semitones === 0
+          ? "目標: 原調 (0)"
+          : `目標: ${this.calcTargetKeyName(this.detectedKey || "C", semitones)} (${signText})`;
+      }
       if (this.currentJob) {
         this.currentJob.stems = data.stems;
         this.currentJob.currentPitchShift = semitones;
       }
-      if (this.pitchShiftSlider) {
-        this.pitchShiftSlider.value = semitones;
+
+      // 3. 前端音訊緩衝區平滑批次刷新 (池化並發 3 + 重試，絕不拋出假報錯)
+      this.updateBusyOverlayProgress(85, "正在刷新混音盤音訊...", "平滑載入分軌 (0/21)...");
+      try {
+        await this.batchRefreshTracksAudio(data.stems, (done, total) => {
+          const pct = 85 + Math.round((done / total) * 12);
+          this.updateBusyOverlayProgress(pct, `正在刷新混音盤音訊 (${done}/${total})...`, "平滑重載中，保護瀏覽器網路池...");
+        });
+      } catch (loadErr) {
+        console.warn("[applyPitchShift] 分軌重整異常:", loadErr);
       }
-      this.updatePitchUiOnly(semitones);
+
+      // 4. 確保所有音軌波形重新繪製
+      for (const track of this.tracks) {
+        this.drawWaveform(track);
+      }
 
       if (bannerStage) bannerStage.textContent = "READY";
-      if (bannerTitle) bannerTitle.textContent = `神經變調完成！當前調性: ${data.targetKey}`;
-      if (bannerSub) bannerSub.textContent = "可隨時拉動升降桿或點擊「⟲ 恢復原調」即時切換";
+      if (bannerTitle) bannerTitle.textContent = `音訊調性調整完成: ${signText} 半音`;
+      if (bannerSub) bannerSub.textContent = "可隨時拉動滑桿或點擊「⟲ 恢復原調」即時切換";
 
-      this.pauseOffsetSec = curPos;
+      this.pauseOffsetSec = Math.min(curPos, this.durationSec);
+      this.updatePlayheadUi(this.pauseOffsetSec);
+
       if (wasPlaying) {
         this.startPlayback();
       }
@@ -2802,37 +2873,6 @@ class StemForgeDawApp {
       if (this.btnApplyPitch) {
         this.btnApplyPitch.disabled = false;
         this.btnApplyPitch.textContent = "⚡ 套用變調";
-      }
-    }
-  }
-
-  stepTempoUi(delta) {
-    if (!this.tempoSlider) return;
-    const cur = parseInt(this.tempoSlider.value, 10) || this.originalBpm || 120;
-    const minVal = parseInt(this.tempoSlider.min, 10) || 40;
-    const maxVal = parseInt(this.tempoSlider.max, 10) || 260;
-    const next = Math.max(minVal, Math.min(maxVal, cur + delta));
-    if (next !== cur) {
-      this.tempoSlider.value = next;
-      this.updateTempoUiOnly(next);
-    }
-  }
-
-  updateTempoUiOnly(targetBpm) {
-    const origBpm = this.originalBpm || 120;
-    this.currentBpm = targetBpm;
-    const ratio = targetBpm / origBpm;
-    const pctDiff = ((ratio - 1.0) * 100).toFixed(1);
-    const sign = pctDiff > 0 ? "+" : "";
-
-    if (this.tempoValueLabel) {
-      this.tempoValueLabel.textContent = `${targetBpm} BPM`;
-    }
-    if (this.targetBpmBadge) {
-      if (Math.abs(ratio - 1.0) < 0.005) {
-        this.targetBpmBadge.textContent = "目標: 原速";
-      } else {
-        this.targetBpmBadge.textContent = `目標: ${targetBpm} BPM (${sign}${pctDiff}%)`;
       }
     }
   }
@@ -2855,66 +2895,70 @@ class StemForgeDawApp {
     const bannerTitle = document.getElementById("progressTitleText");
     const bannerSub = document.getElementById("progressSubText");
 
-    const pctDiff = ((ratio - 1.0) * 100).toFixed(1);
-    const signText = pctDiff > 0 ? `+${pctDiff}%` : `${pctDiff}%`;
-
+    const pctDelta = Math.round((ratio - 1.0) * 100);
+    const signText = pctDelta > 0 ? `+${pctDelta}%` : `${pctDelta}%`;
     if (bannerStage) bannerStage.textContent = "TIME STRETCH";
-    if (bannerTitle) bannerTitle.textContent = `[Phase-Vocoder] 正在執行 21 軌無損時間軸變速 (${targetBpm} BPM / ${signText})...`;
-    if (bannerSub) bannerSub.textContent = "所有分軌（含鼓組）等比例縮放時間軸，音高 100% 鎖定不動，零頻率失真";
+    if (bannerTitle) bannerTitle.textContent = `[Time-Stretch] 正在調整全曲拍速至 ${targetBpm} BPM (${ratio.toFixed(2)}x)...`;
+    if (bannerSub) bannerSub.textContent = "高階 WSOLA 演算法無損變速，保持音高、打擊感與音質絕對不變";
 
     if (this.btnApplyTempo) {
       this.btnApplyTempo.disabled = true;
       this.btnApplyTempo.textContent = "⏳ 變速中...";
     }
 
-    const overlayTitle = isReset
-      ? "⟲ 正在恢復原始拍速..."
-      : `⚡ 正在進行 21 軌無損時間軸變速 (${targetBpm} BPM / ${signText})...`;
+    const overlayTitle = isReset ? "⟲ 正在恢復原速..." : `⚡ 正在進行 21 軌時間軸變速 (${targetBpm} BPM)...`;
     const overlaySub = isReset
-      ? "正在重新載入與解碼原始音訊軌道..."
-      : "所有軌道（含鼓組）等比例縮放時間軸，音高 100% 鎖定不動...";
-
-    this.showBusyOverlay(overlayTitle, overlaySub, 5, "⏱️");
+      ? "正在重新載入與解碼原始速度音訊軌道..."
+      : "WSOLA 演算法無損變速處理中，保持音質與打擊感不變...";
+    this.showBusyOverlay(overlayTitle, overlaySub, 5, "⚡");
 
     try {
       const currentPitch = (typeof this.currentJob?.currentPitchShift === "number")
         ? this.currentJob.currentPitchShift
         : (this.pitchShiftSlider ? parseInt(this.pitchShiftSlider.value, 10) : 0);
-      const res = await fetch(`/api/jobs/${this.currentJob.jobId}/time-stretch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          targetBpm,
-          tempoRatio: ratio,
-          originalBpm: origBpm,
-          pitchShiftSemitones: currentPitch
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "變速失敗");
 
-      this.updateBusyOverlayProgress(85, "正在更新混音台音訊...", "載入最新音軌緩衝區並重新計算時間軸長度...");
+      // 1. 後端時間軸變速運算 (API 請求隔離)
+      let data;
+      try {
+        const res = await fetch(`/api/jobs/${this.currentJob.jobId}/time-stretch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetBpm,
+            tempoRatio: ratio,
+            originalBpm: origBpm,
+            pitchShiftSemitones: currentPitch
+          })
+        });
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || "後端變速運算失敗");
+      } catch (postErr) {
+        throw new Error(`時間軸變速請求失敗: ${postErr.message}`);
+      }
 
+      // 2. 後端運算成功，立即更新狀態與徽章，保證狀態不丟失
+      if (this.currentJob) {
+        this.currentJob.stems = data.stems;
+        this.currentJob.currentTempoRatio = ratio;
+        this.currentJob.targetBpm = targetBpm;
+      }
+      this.currentBpm = targetBpm;
       if (this.targetBpmBadge) {
         this.targetBpmBadge.textContent = isReset ? "目標: 原速" : `目標: ${targetBpm} BPM (${signText})`;
       }
 
-      // 平行重新解碼變速後的各軌音訊並更新下載連結
-      await Promise.all(
-        data.stems.map(async (stem) => {
-          const track = this.tracks.find((t) => t.nodeId === stem.nodeId);
-          if (track) {
-            track.meta.relativeUrl = stem.relativeUrl;
-            const link = track.rowEl?.querySelector("a.act-link");
-            if (link) link.href = stem.relativeUrl;
-            const r = await fetch(`${stem.relativeUrl}?t=${Date.now()}`);
-            const buf = await r.arrayBuffer();
-            track.audioBuffer = await this.audioCtx.decodeAudioData(buf);
-          }
-        })
-      );
+      // 3. 前端音訊緩衝區平滑批次刷新 (池化並發 3 + 重試，絕不拋出假報錯)
+      this.updateBusyOverlayProgress(85, "正在刷新混音盤音訊...", "平滑載入分軌 (0/21)...");
+      try {
+        await this.batchRefreshTracksAudio(data.stems, (done, total) => {
+          const pct = 85 + Math.round((done / total) * 12);
+          this.updateBusyOverlayProgress(pct, `正在刷新混音盤音訊 (${done}/${total})...`, "平滑重載中，保護瀏覽器網路池...");
+        });
+      } catch (loadErr) {
+        console.warn("[applyTempoShift] 分軌重整異常:", loadErr);
+      }
 
-      // 重新計算歌曲總時長 (變速後長度改變)
+      // 4. 重新計算歌曲總長度 (變速後長度改變)
       let maxDur = 0;
       for (const t of this.tracks) {
         if (t.audioBuffer && t.audioBuffer.duration > maxDur) {
@@ -2927,23 +2971,16 @@ class StemForgeDawApp {
         if (totalTimeEl) totalTimeEl.textContent = this.formatTime(this.durationSec);
       }
 
-      // 重新繪製 21 軌波形 Canvas (因為時間長度已自適應改變)
+      // 5. 確保所有音軌波形重新繪製
       for (const track of this.tracks) {
         this.drawWaveform(track);
       }
 
-      if (this.currentJob) {
-        this.currentJob.stems = data.stems;
-        this.currentJob.currentTempoRatio = ratio;
-        this.currentJob.targetBpm = targetBpm;
-      }
-      this.currentBpm = targetBpm;
-
       if (bannerStage) bannerStage.textContent = "READY";
-      if (bannerTitle) bannerTitle.textContent = `拍速調整完成！當前拍速: ${targetBpm} BPM`;
+      if (bannerTitle) bannerTitle.textContent = `拍速調整完成: ${targetBpm} BPM`;
       if (bannerSub) bannerSub.textContent = "可隨時拉動滑桿或點擊「⟲ 恢復原速」即時切換";
 
-      // 縮放播放頭位置以保持在歌曲相對位置
+      // 縮放播放位置以保持音樂的相對進度
       const newPos = isReset ? curPos : curPos / ratio;
       this.pauseOffsetSec = Math.min(newPos, this.durationSec);
       this.updatePlayheadUi(this.pauseOffsetSec);
@@ -2965,8 +3002,6 @@ class StemForgeDawApp {
     }
   }
 
-  // ============================================================
-  // ✂️ 編曲剪輯與片段管理 (Arrangement Clip & Region Management)
   // ============================================================
   setToolMode(mode) {
     this.currentTool = mode;

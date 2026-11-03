@@ -673,7 +673,7 @@ body {
 .transport-bar {
   background: #111827;
   border-bottom: 1px solid var(--border-col);
-  padding: 6px 16px;
+  padding: 8px 24px 8px 18px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -701,6 +701,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  gap: 12px;
 }
 
 .transport-group-left {
@@ -864,16 +866,18 @@ body {
 .master-fader-box {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
+  gap: 10px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-  height: 28px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-right: 12px;
 }
 
 .master-fader-box input[type="range"] {
-  width: 95px;
-  height: 5px;
+  width: 110px;
+  height: 6px;
   accent-color: #38bdf8;
   cursor: pointer;
 }
@@ -882,11 +886,12 @@ body {
   background: rgba(16, 185, 129, 0.14);
   border: 1px solid rgba(16, 185, 129, 0.4);
   color: #34d399;
-  padding: 3px 8px;
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 5px;
   font-family: Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Pitch Shift Panel (單行舒適) */
@@ -894,12 +899,12 @@ body {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 5px;
-  padding: 2px 8px;
-  height: 28px;
+  border-radius: 6px;
+  padding: 3px 10px;
+  height: 32px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -943,8 +948,8 @@ body {
 }
 
 .pitch-controls-row input[type="range"] {
-  width: 75px;
-  height: 5px;
+  width: 105px;
+  height: 6px;
   accent-color: #a855f7;
   cursor: pointer;
 }
@@ -979,9 +984,9 @@ body {
   background: linear-gradient(135deg, #9333ea, #7c3aed);
   border: 1px solid #a855f7;
   color: white;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -997,9 +1002,9 @@ body {
   background: #1e293b;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 3px 6px;
+  padding: 4px 8px;
   border-radius: 4px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
@@ -1016,12 +1021,12 @@ body {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   background: #090e1a;
   border: 1px solid #1e293b;
-  border-radius: 5px;
-  padding: 2px 8px;
-  height: 28px;
+  border-radius: 6px;
+  padding: 3px 10px;
+  height: 32px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -1065,8 +1070,8 @@ body {
 }
 
 .tempo-controls-row input[type="range"] {
-  width: 80px;
-  height: 5px;
+  width: 115px;
+  height: 6px;
   accent-color: #06b6d4;
   cursor: pointer;
 }
@@ -1101,9 +1106,9 @@ body {
   background: linear-gradient(135deg, #059669, #0d9488);
   border: 1px solid #10b981;
   color: white;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -1119,9 +1124,9 @@ body {
   background: #1e293b;
   border: 1px solid #475569;
   color: #94a3b8;
-  padding: 3px 6px;
+  padding: 4px 8px;
   border-radius: 4px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
@@ -1144,20 +1149,21 @@ body {
 .export-group-left, .export-group-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 
 .export-actions .btn {
-  padding: 4px 10px;
-  font-size: 11.5px;
-  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 5px;
   white-space: nowrap;
-  height: 26px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   line-height: 1;
 }
 
