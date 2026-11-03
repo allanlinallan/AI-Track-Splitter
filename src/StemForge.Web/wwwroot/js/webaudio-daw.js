@@ -1,4 +1,4 @@
-/**
+﻿/**
 
  * StemForge Studio — WebAudio Sample-Accurate Multitrack DAW Engine & DAG UI Controller
 
@@ -5442,118 +5442,93 @@ class StemForgeDawApp {
 
     // 安全下載並解碼單一音訊緩衝區（自帶逾時控制與重試機制）
 
+  // 安全下載並解碼單一音訊緩衝區（強制 no-store 絕不使用快取，自帶逾時與重試）
   async loadAudioBufferSafely(url, retries = 3) {
-
-    const fetchUrl = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
-
+    const cleanUrl = url.split('?')[0];
+    const fetchUrl = ${cleanUrl}?t=_;
     for (let attempt = 0; attempt <= retries; attempt++) {
-
       try {
-
         const controller = new AbortController();
-
         const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-        const r = await fetch(fetchUrl, { signal: controller.signal });
-
+        const r = await fetch(fetchUrl, {
+          cache: 'no-store',
+          headers: {
+            'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          },
+          signal: controller.signal
+        });
         clearTimeout(timeoutId);
-
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-
+        if (!r.ok) throw new Error(HTTP );
         const buf = await r.arrayBuffer();
-
-        return await this.audioCtx.decodeAudioData(buf);
-
+        const decoded = await this.audioCtx.decodeAudioData(buf);
+        return decoded;
       } catch (err) {
-
         if (attempt >= retries) {
-
-          console.warn(`[AudioLoad] 音訊載入失敗 (已重試 ${retries} 次): ${url}:`, err);
-
+          console.error([AudioLoad] ❌ 音訊載入失敗 (已重試  次): :, err);
           return null;
-
         }
-
-        await new Promise((res) => setTimeout(res, 250 * (attempt + 1)));
-
+        await new Promise((res) => setTimeout(res, 300 * (attempt + 1)));
       }
-
     }
-
     return null;
-
   }
 
-
-
-  // 平滑池化批次刷新所有分軌（最大並發 3），徹底根除瀏覽器並發打滿引發的 Failed to fetch
-
+  // 平滑池化批次刷新所有分軌音訊（超強寬鬆容錯匹配 + 檔名回退匹配 + 詳細日誌）
   async batchRefreshTracksAudio(stems, onProgress = null) {
-
     const queue = [...stems];
-
     let completed = 0;
-
     const concurrency = 2;
-
-
+    let failedCount = 0;
 
     const worker = async () => {
-
       while (queue.length > 0) {
-
         const stem = queue.shift();
-
         if (!stem) break;
 
-        const track = this.tracks.find((t) => t.nodeId === stem.nodeId);
+        const stemFn = (stem.relativeUrl || stem.filePath || '').split(/[/\]/).pop().split('?')[0].toLowerCase();
+        // 寬鬆比對：先比對 nodeId（忽略大小寫），若失敗則比對檔名
+        const track = this.tracks.find((t) => {
+          if (t.nodeId && stem.nodeId && t.nodeId.toLowerCase() === stem.nodeId.toLowerCase()) return true;
+          const tFn = (t.meta?.relativeUrl || t.meta?.filePath || '').split(/[/\]/).pop().split('?')[0].toLowerCase();
+          return tFn && stemFn && tFn === stemFn;
+        });
 
         if (track) {
-
           track.meta.relativeUrl = stem.relativeUrl;
-
-          const link = track.rowEl?.querySelector("a.act-link");
-
+          const link = track.rowEl?.querySelector('a.act-link');
           if (link) link.href = stem.relativeUrl;
 
           const newBuffer = await this.loadAudioBufferSafely(stem.relativeUrl);
-
           if (newBuffer) {
-
             track.audioBuffer = newBuffer;
-
             try { this.drawWaveform(track); } catch {}
-
+            console.log([DAW] ✅ 音軌解碼與緩衝區更新成功: [] (時長: s));
+          } else {
+            failedCount++;
+            console.error([DAW] ❌ 音軌緩衝區下載/解碼失敗: [] URL: );
           }
-
+        } else {
+          console.warn([DAW] ⚠️ 在 tracks 列表中找不到匹配的音軌: stem.nodeId=, 檔名=);
         }
 
         completed++;
-
         if (onProgress) {
-
           onProgress(completed, stems.length, stem);
-
         }
-
       }
-
     };
 
-
-
     const workers = [];
-
     const poolSize = Math.min(concurrency, stems.length);
-
     for (let i = 0; i < poolSize; i++) {
-
       workers.push(worker());
-
     }
-
     await Promise.all(workers);
 
+    if (failedCount > 0) {
+      console.warn([DAW] ⚠️ 批次刷新共有  條軌道載入失敗，建議點擊「🔄 重新載入專案」進行完整還原);
+    }
   }
 
 
@@ -5705,6 +5680,17 @@ class StemForgeDawApp {
         this.drawWaveform(track);
 
       }
+
+      // 確保原曲母帶 (TRACK_00_ORIGINAL) 嚴格保持靜音，防止原調母帶疊加混入
+      const origTrack = this.tracks.find(t => t.nodeId === 'TRACK_00_ORIGINAL' || t.meta?.isOriginalReference);
+      if (origTrack) {
+        origTrack.mute = true;
+        origTrack.solo = false;
+        origTrack.rowEl?.querySelector('.m-btn.mute')?.classList.add('active');
+        origTrack.rowEl?.querySelector('.m-btn.solo')?.classList.remove('active');
+      }
+      this.updateTrackGains();
+
 
 
 
@@ -5951,6 +5937,17 @@ class StemForgeDawApp {
         this.drawWaveform(track);
 
       }
+
+      // 確保原曲母帶 (TRACK_00_ORIGINAL) 嚴格保持靜音，防止原調母帶疊加混入
+      const origTrack = this.tracks.find(t => t.nodeId === 'TRACK_00_ORIGINAL' || t.meta?.isOriginalReference);
+      if (origTrack) {
+        origTrack.mute = true;
+        origTrack.solo = false;
+        origTrack.rowEl?.querySelector('.m-btn.mute')?.classList.add('active');
+        origTrack.rowEl?.querySelector('.m-btn.solo')?.classList.remove('active');
+      }
+      this.updateTrackGains();
+
 
 
 
