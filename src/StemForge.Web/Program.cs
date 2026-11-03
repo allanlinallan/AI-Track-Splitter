@@ -30,6 +30,20 @@ using StemForge.Web.Hubs;
 
 
 
+// 啟動前自動終止同名的其他殘留進程，防止 Visual Studio 重新啟動時 5188 端口衝突 (SocketException)
+try
+{
+    int currentPid = Environment.ProcessId;
+    foreach (var proc in Process.GetProcessesByName("StemForge.Web"))
+    {
+        if (proc.Id != currentPid)
+        {
+            try { proc.Kill(true); proc.WaitForExit(1000); } catch { }
+        }
+    }
+}
+catch { }
+
 var builder = WebApplication.CreateBuilder(args);
 
 
@@ -608,7 +622,7 @@ app.MapPost("/api/jobs/{jobId}/midi/{nodeId}", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound();
 
@@ -694,7 +708,7 @@ app.MapPost("/api/jobs/{jobId}/denoise/{nodeId}", async (
 
     string? stemWavPath = null;
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job != null)
 
@@ -844,7 +858,7 @@ app.MapPost("/api/jobs/{jobId}/deep-clean/{nodeId}", async (
 
     string? stemWavPath = null;
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job != null)
 
@@ -982,7 +996,7 @@ app.MapPost("/api/jobs/{jobId}/timbre-transfer", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該任務" });
 
@@ -1114,7 +1128,7 @@ app.MapPost("/api/jobs/{jobId}/export-zip", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound();
 
@@ -1204,7 +1218,7 @@ app.MapPost("/api/jobs/{jobId}/mixdown", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -1694,7 +1708,7 @@ app.MapPost("/api/jobs/{jobId}/override-key", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -1798,7 +1812,7 @@ app.MapPost("/api/jobs/{jobId}/override-bpm", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -1948,7 +1962,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -2018,7 +2032,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
 
             {
 
-                File.Copy(rawWav, Path.Combine(stemsDir, Path.GetFileName(rawWav)), true);
+                SafeCopyFile(rawWav, Path.Combine(stemsDir, Path.GetFileName(rawWav)));
 
             }
 
@@ -2082,7 +2096,7 @@ app.MapPost("/api/jobs/{jobId}/pitch-shift", async (
 
                 {
 
-                    File.Copy(pwav, Path.Combine(stemsDir, Path.GetFileName(pwav)), true);
+                    SafeCopyFile(pwav, Path.Combine(stemsDir, Path.GetFileName(pwav)));
 
                 }
 
@@ -2212,7 +2226,7 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -2264,7 +2278,7 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
 
         {
 
-            File.Copy(wav, Path.Combine(rawStemsDir, Path.GetFileName(wav)), true);
+            SafeCopyFile(wav, Path.Combine(rawStemsDir, Path.GetFileName(wav)));
 
         }
 
@@ -2308,7 +2322,7 @@ app.MapPost("/api/jobs/{jobId}/time-stretch", async (
 
             {
 
-                File.Copy(rawWav, Path.Combine(stemsDir, Path.GetFileName(rawWav)), true);
+                SafeCopyFile(rawWav, Path.Combine(stemsDir, Path.GetFileName(rawWav)));
 
             }
 
@@ -2706,7 +2720,7 @@ app.MapPost("/api/jobs/{jobId}/prompt/{prompt}", async (
 
 
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job != null)
 
@@ -2966,7 +2980,7 @@ app.MapDelete("/api/jobs/{jobId}/tracks/{nodeId}", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -3016,7 +3030,7 @@ app.MapPost("/api/jobs/{jobId}/tracks/{nodeId}/ripple-cut", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -3082,7 +3096,7 @@ app.MapPost("/api/jobs/{jobId}/tracks/{nodeId}/offset", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -3134,7 +3148,7 @@ app.MapPost("/api/jobs/{jobId}/tracks/reorder", async (
 
 {
 
-    var job = orchestrator.GetJobResult(jobId);
+    var job = GetJob(orchestrator, jobId);
 
     if (job == null) return Results.NotFound(new { error = "找不到該分軌任務" });
 
@@ -3284,7 +3298,17 @@ static string FindProjectRoot()
 
 
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (System.IO.IOException ex) when (ex.InnerException is System.Net.Sockets.SocketException)
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine("[StemForge] ⚠️ 端口 5188 已被佔用。已自動清理衝突進程，請重新啟動。");
+    Console.ResetColor();
+    throw;
+}
 
 
 
@@ -3352,7 +3376,7 @@ static void StandardizeProjectStems(string jobDir)
 
             {
 
-                try { File.Copy(f, rawFile, true); } catch { }
+                SafeCopyFile(f, rawFile);
 
             }
 
@@ -3400,3 +3424,36 @@ static void UpdateProjectStateJson(string jobDir, Action<System.Text.Json.Nodes.
 
 }
 
+
+
+static SeparationJobResult? GetJob(DagOrchestrator orchestrator, string jobId)
+{
+    return orchestrator.GetJobResult(jobId) ?? orchestrator.TryRestoreJobFromDisk(jobId);
+}
+
+static void SafeCopyFile(string src, string dst, int maxRetries = 10)
+{
+    if (!File.Exists(src)) return;
+    for (int i = 0; i < maxRetries; i++)
+    {
+        try
+        {
+            File.Copy(src, dst, true);
+            return;
+        }
+        catch (IOException) when (i < maxRetries - 1)
+        {
+            Thread.Sleep(50 * (i + 1));
+        }
+    }
+    try
+    {
+        string tmp = dst + ".tmp_" + Guid.NewGuid().ToString("N")[..6];
+        File.Copy(src, tmp, true);
+        File.Move(tmp, dst, true);
+    }
+    catch
+    {
+        try { File.Copy(src, dst, true); } catch { }
+    }
+}

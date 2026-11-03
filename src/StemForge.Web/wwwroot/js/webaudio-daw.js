@@ -1950,11 +1950,17 @@ class StemForgeDawApp {
 
     // 解碼原曲供 Null Test 反相抵消使用 (加上 timestamp 避免被瀏覽器硬取快取)
 
-    const srcResp = await fetch(`${jobResult.sourceAudioUrl}?t=${Date.now()}`);
-
-    const srcArr = await srcResp.arrayBuffer();
-
-    this.originalMixBuffer = await this.audioCtx.decodeAudioData(srcArr);
+    try {
+      this.originalMixBuffer = await this.loadAudioBufferSafely(jobResult.sourceAudioUrl, 3);
+    } catch (e) {
+      console.warn("[DAW] 原曲母帶載入異常:", e);
+    }
+    if (!this.originalMixBuffer) {
+      console.warn("[DAW] 原曲母帶載入失敗或不存在，建立靜音備援緩衝區以保證混音台正常運作");
+      const sampleRate = jobResult.sampleRate || 44100;
+      const duration = jobResult.durationSeconds || 180;
+      this.originalMixBuffer = this.audioCtx.createBuffer(2, Math.max(1, Math.floor(duration * sampleRate)), sampleRate);
+    }
 
     this.durationSec = this.originalMixBuffer.duration;
 
@@ -2021,23 +2027,20 @@ class StemForgeDawApp {
     const decodedStems = [];
 
     const queue = [...jobResult.stems];
-
+    const totalStems = jobResult.stems.length;
+    let decodedCount = 0;
     const concurrency = 2;
 
     const loadWorker = async () => {
-
       while (queue.length > 0) {
-
         const stem = queue.shift();
-
         if (!stem) break;
-
         const audioBuffer = await this.loadAudioBufferSafely(stem.relativeUrl);
-
         decodedStems.push({ stem, audioBuffer });
-
+        decodedCount++;
+        const pct = 25 + Math.round((decodedCount / totalStems) * 60);
+        this.updateBusyOverlayProgress(pct, `正在解碼音軌 (${decodedCount}/${totalStems})...`, stem.displayName || stem.nodeId);
       }
-
     };
 
     const workers = [];
@@ -5639,27 +5642,23 @@ class StemForgeDawApp {
       // 1. 後端變調運算 (API 請求隔離)
 
       let data;
-
       try {
-
-        const res = await fetch(`/api/jobs/${this.currentJob.jobId}/pitch-shift`, {
-
-          method: "POST",
-
-          headers: { "Content-Type": "application/json" },
-
-          body: JSON.stringify({ semitones, targetBpm, originalBpm })
-
-        });
-
-        data = await res.json();
-
-        if (!res.ok) throw new Error(data.error || "後端變調運算失敗");
-
+        let res;
+        try {
+          res = await fetch(`/api/jobs/${this.currentJob.jobId}/pitch-shift`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ semitones, targetBpm, originalBpm })
+          });
+        } catch (netErr) {
+          throw new Error(`無法連線至本機伺服器 (請確認 Visual Studio / 後端已正常啟動): ${netErr.message}`);
+        }
+        let jsonPayload = null;
+        try { jsonPayload = await res.json(); } catch {}
+        if (!res.ok) throw new Error(jsonPayload?.error || `後端伺服器回應異常 (HTTP ${res.status})`);
+        data = jsonPayload || {};
       } catch (postErr) {
-
         throw new Error(`變調請求失敗: ${postErr.message}`);
-
       }
 
 
@@ -5860,37 +5859,28 @@ class StemForgeDawApp {
       // 1. 後端時間軸變速運算 (API 請求隔離)
 
       let data;
-
       try {
-
-        const res = await fetch(`/api/jobs/${this.currentJob.jobId}/time-stretch`, {
-
-          method: "POST",
-
-          headers: { "Content-Type": "application/json" },
-
-          body: JSON.stringify({
-
-            targetBpm,
-
-            tempoRatio: ratio,
-
-            originalBpm: origBpm,
-
-            pitchShiftSemitones: currentPitch
-
-          })
-
-        });
-
-        data = await res.json();
-
-        if (!res.ok) throw new Error(data.error || "後端變速運算失敗");
-
+        let res;
+        try {
+          res = await fetch(`/api/jobs/${this.currentJob.jobId}/time-stretch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetBpm,
+              tempoRatio: ratio,
+              originalBpm: origBpm,
+              pitchShiftSemitones: currentPitch
+            })
+          });
+        } catch (netErr) {
+          throw new Error(`無法連線至本機伺服器 (請確認 Visual Studio / 後端已正常啟動): ${netErr.message}`);
+        }
+        let jsonPayload = null;
+        try { jsonPayload = await res.json(); } catch {}
+        if (!res.ok) throw new Error(jsonPayload?.error || `後端伺服器回應異常 (HTTP ${res.status})`);
+        data = jsonPayload || {};
       } catch (postErr) {
-
         throw new Error(`時間軸變速請求失敗: ${postErr.message}`);
-
       }
 
 
