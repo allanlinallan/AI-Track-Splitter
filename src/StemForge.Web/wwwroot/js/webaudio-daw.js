@@ -1509,21 +1509,26 @@ class StemForgeDawApp {
 
 
     try {
-
-      const res = await fetch("/api/jobs/separate", { method: "POST", body: formData });
-
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || "分軌失敗");
-
+      let res;
+      try {
+        res = await fetch("/api/jobs/separate", { method: "POST", body: formData });
+      } catch (netErr) {
+        throw new Error(`無法連線至本機後端伺服器 (請確認 Visual Studio 專案已正常啟動執行中): ${netErr.message}`);
+      }
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        throw new Error(`後端回應格式異常 (HTTP ${res.status}): ${jsonErr.message}`);
+      }
+      if (!res.ok) throw new Error(data?.error || `分軌失敗 (HTTP ${res.status})`);
+      
+      this.updateBusyOverlayProgress(20, "分軌運算完成，正在將 21 軌解碼載入混音台...", "正在初始化音訊緩衝區...");
       await this.loadJobIntoMixer(data);
-
     } catch (err) {
-
-      alert(err.message);
-
+      console.error("[SeparationJob] 分軌或混音台載入失敗:", err);
+      alert(`分軌執行失敗: ${err.message}`);
       this.hideBusyOverlay();
-
     } finally {
 
       this.btnStartSeparate.disabled = false;
