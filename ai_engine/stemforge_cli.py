@@ -415,22 +415,23 @@ def detect_audio_key(audio_path: str):
     # 1. 若大調最高分 >= 小調最高分，直接輸出大調 (例如 《就在今夜》 G Major 領先 E Minor)
     # 2. 若大調與小調互為關係大小調 (例如 G 大調 vs E 小調，C 大調 vs A 小調)，依大調優先原則輸出大調
     # 3. 除非小調得分高出大調非常多 (超過 0.35 門檻之純小調作品)，否則一律自動收斂為「關係大調」
+    # 「如果沒辦法判斷 大小調 就以 大調為主 不要強制判斷小調」
+    # 樂理與 MIR 工業級決策邏輯：
+    # 1. 若大調得分 >= 小調得分，直接輸出大調 (例如《又見炊煙》D Major 勝過 D Minor；《就在今夜》G Major 0.525 勝過 E Minor 0.504)
+    # 2. 若小調特徵明確且明顯勝出 (小調得分領先大調 >= 0.03)，採納小調 (例如《酒醉的探戈2001》C Minor 0.789 壓倒性勝過 D# Major 0.626)
+    # 3. 若兩者極為接近 (差值 < 0.03，無法明確分辨大小調)，依照「大調優先原則」收斂為大調
     if best_maj_score >= best_min_score:
         chosen_root = best_maj_root
         chosen_mode = "Major"
         chosen_score = best_maj_score
-    elif best_maj_root == rel_maj_root:
-        chosen_root = best_maj_root
-        chosen_mode = "Major"
-        chosen_score = best_maj_score
-    elif best_min_score > best_maj_score + 0.35:
+    elif best_min_score >= best_maj_score + 0.03:
         chosen_root = best_min_root
         chosen_mode = "Minor"
         chosen_score = best_min_score
     else:
-        chosen_root = rel_maj_root
+        chosen_root = rel_maj_root if best_maj_root == rel_maj_root else best_maj_root
         chosen_mode = "Major"
-        chosen_score = best_min_score
+        chosen_score = best_maj_score
 
 
     best_key = f"{chosen_root} {chosen_mode}"

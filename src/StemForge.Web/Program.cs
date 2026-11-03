@@ -30,7 +30,7 @@ using StemForge.Web.Hubs;
 
 
 
-// 啟動前自動終止同名的其他殘留進程，防止 Visual Studio 重新啟動時 5188 端口衝突 (SocketException)
+// 啟動前自動終止佔用 5188 連接埠之殘留進程，防止 Visual Studio 重新啟動時 5188 端口衝突 (SocketException)
 try
 {
     int currentPid = Environment.ProcessId;
@@ -39,6 +39,31 @@ try
         if (proc.Id != currentPid)
         {
             try { proc.Kill(true); proc.WaitForExit(1000); } catch { }
+        }
+    }
+
+    // 透過 netstat 查找佔用 5188 端口的任何孤兒進程 (如 dotnet.exe) 並終止
+    var psi = new ProcessStartInfo("cmd.exe", "/c netstat -ano -p tcp | findstr :5188")
+    {
+        RedirectStandardOutput = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
+    };
+    using var netstatProc = Process.Start(psi);
+    if (netstatProc != null)
+    {
+        string lines = netstatProc.StandardOutput.ReadToEnd();
+        netstatProc.WaitForExit(1500);
+        foreach (var line in lines.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 5 && parts[1].Contains(":5188"))
+            {
+                if (int.TryParse(parts[parts.Length - 1], out int pid) && pid != currentPid && pid > 4)
+                {
+                    try { var p = Process.GetProcessById(pid); p.Kill(true); p.WaitForExit(1000); } catch { }
+                }
+            }
         }
     }
 }
@@ -159,33 +184,22 @@ var app = builder.Build();
 
 
 app.Lifetime.ApplicationStarted.Register(() =>
-
 {
+    // 若在 Visual Studio / IDE 偵錯環境下，由 IDE 本身控管瀏覽器，避免雙開兩個視窗
+    if (Debugger.IsAttached) return;
 
     try
-
     {
-
         string openUrl = defaultUrl;
-
         var urls = app.Urls;
-
         if (urls.Count > 0) openUrl = urls.First();
-
         Process.Start(new ProcessStartInfo
-
         {
-
             FileName = openUrl,
-
             UseShellExecute = true
-
         });
-
     }
-
     catch { /* 忽略自動開啟瀏覽器失敗 */ }
-
 });
 
 
