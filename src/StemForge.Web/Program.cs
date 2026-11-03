@@ -183,10 +183,11 @@ var app = builder.Build();
 
 
 
+int browserOpened = 0;
 app.Lifetime.ApplicationStarted.Register(() =>
 {
-    // 若在 Visual Studio / IDE 偵錯環境下，由 IDE 本身控管瀏覽器，避免雙開兩個視窗
-    if (Debugger.IsAttached) return;
+    // 保證全生命週期只精準開啟 1 次瀏覽器，相容 Visual Studio (F5 / Ctrl+F5) 與 Portable exe
+    if (Interlocked.Exchange(ref browserOpened, 1) != 0) return;
 
     try
     {
