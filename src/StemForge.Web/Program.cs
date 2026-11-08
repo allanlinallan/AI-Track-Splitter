@@ -339,6 +339,16 @@ app.MapGet("/api/preview/local-file", (string path) =>
 
 app.MapHub<SeparationHub>("/hubs/separation");
 
+app.MapPost("/api/system/shutdown", (IHostApplicationLifetime lifetime) =>
+{
+    _ = Task.Run(async () =>
+    {
+        await Task.Delay(500);
+        lifetime.StopApplication();
+    });
+    return Results.Ok(new { message = "Shutting down server..." });
+});
+
 
 
 // 1. 取得硬體 (RTX 4050 6GB VRAM) 與環境狀態
