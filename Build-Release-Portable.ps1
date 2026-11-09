@@ -1,7 +1,7 @@
 param(
     [switch]$IncludeModels = $true,
     [switch]$CreateZip = $true,
-    [string]$Version = "2.2.0"
+    [string]$Version = "2.2.1"
 )
 
 $ErrorActionPreference = "Stop"

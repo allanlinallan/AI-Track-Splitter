@@ -57,3 +57,7 @@ test_audio.mp4
 ## OS Specific
 .DS_Store
 Thumbs.db
+
+# Private launcher script
+COPYANDRUN.bat
+**/COPYANDRUN.bat
