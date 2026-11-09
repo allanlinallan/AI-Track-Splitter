@@ -182,6 +182,8 @@ with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         if 'workspace_data\\cache' in root or 'workspace_data/cache' in root:
             continue
         for f in files:
+            if f.upper() == 'COPYANDRUN.BAT':
+                continue
             if ('workspace_data\\projects' in root or 'workspace_data/projects' in root) and f != '.gitkeep':
                 continue
             fp = os.path.join(root, f)
