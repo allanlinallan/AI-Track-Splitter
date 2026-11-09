@@ -108,9 +108,7 @@ body {
 
 .topbar {
 
-  min-height: 48px;
-
-  height: auto;
+  height: 52px;
 
   background: #0d1322;
 
@@ -122,13 +120,29 @@ body {
 
   justify-content: space-between;
 
-  padding: 4px 14px;
-
-  gap: 6px 10px;
-
-  flex-wrap: wrap;
+  padding: 0 18px;
 
   flex-shrink: 0;
+
+  overflow-x: auto;
+
+  overflow-y: hidden;
+
+  white-space: nowrap;
+
+}
+
+.topbar::-webkit-scrollbar {
+
+  height: 3px;
+
+}
+
+.topbar::-webkit-scrollbar-thumb {
+
+  background: #334155;
+
+  border-radius: 999px;
 
 }
 
@@ -230,9 +244,11 @@ body {
 
   align-items: center;
 
-  gap: 5px 8px;
+  gap: 8px;
 
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+
+  flex-shrink: 0;
 
 }
 
@@ -296,9 +312,7 @@ body {
 
   grid-template-rows: minmax(0, 1fr);
 
-  flex: 1;
-
-  height: auto;
+  height: calc(100vh - 52px);
 
   min-height: 0;
 
@@ -1358,7 +1372,7 @@ body {
 
   border-bottom: 1px solid var(--border-col);
 
-  padding: 5px 12px;
+  padding: 6px 16px 8px 16px;
 
   box-sizing: border-box;
 
@@ -1366,11 +1380,47 @@ body {
 
   flex-direction: column;
 
-  gap: 5px;
+  gap: 6px;
 
   width: 100%;
 
   flex-shrink: 0;
+
+  overflow-x: auto;
+
+  overflow-y: hidden;
+
+  scrollbar-width: thin;
+
+  scrollbar-color: #38bdf8 rgba(15, 23, 42, 0.8);
+
+}
+
+.transport-bar::-webkit-scrollbar {
+
+  height: 6px;
+
+}
+
+.transport-bar::-webkit-scrollbar-track {
+
+  background: rgba(15, 23, 42, 0.85);
+
+  border-radius: 999px;
+
+}
+
+.transport-bar::-webkit-scrollbar-thumb {
+
+  background: #38bdf8;
+
+  border-radius: 999px;
+
+}
+
+.transport-bar::-webkit-scrollbar-thumb:hover {
+
+  background: #60a5fa;
 
 }
 
@@ -1386,11 +1436,13 @@ body {
 
   width: 100%;
 
-  gap: 4px 8px;
+  min-width: max-content;
+
+  gap: 10px;
 
   box-sizing: border-box;
 
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 
 }
 
@@ -1414,13 +1466,15 @@ body {
 
   align-items: center;
 
-  justify-content: flex-start;
+  justify-content: space-between;
 
   width: 100%;
 
-  gap: 4px 10px;
+  min-width: max-content;
 
-  flex-wrap: wrap;
+  gap: 12px;
+
+  flex-wrap: nowrap;
 
 }
 
@@ -1432,9 +1486,11 @@ body {
 
   align-items: center;
 
-  gap: 4px 6px;
+  gap: 6px;
 
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+
+  flex-shrink: 0;
 
 }
 
@@ -2302,9 +2358,13 @@ body {
 
   justify-content: space-between;
 
-  gap: 4px 8px;
+  width: 100%;
 
-  flex-wrap: wrap;
+  min-width: max-content;
+
+  gap: 10px;
+
+  flex-wrap: nowrap;
 
   overflow: visible;
 
@@ -2318,17 +2378,13 @@ body {
 
   align-items: center;
 
-  gap: 4px 6px;
+  gap: 8px;
 
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 
   white-space: nowrap;
 
-}
-
-.export-group-right {
-
-  margin-left: auto;
+  flex-shrink: 0;
 
 }
 
@@ -2336,7 +2392,7 @@ body {
 
 .export-actions .btn {
 
-  padding: 3px 8px;
+  padding: 4px 10px;
 
   font-size: 11.5px;
 
@@ -2346,13 +2402,15 @@ body {
 
   white-space: nowrap;
 
-  height: 27px;
+  height: 28px;
 
   display: inline-flex;
 
   align-items: center;
 
   gap: 4px;
+
+  flex-shrink: 0;
 
   line-height: 1;
 

@@ -9149,6 +9149,19 @@ window.addEventListener("DOMContentLoaded", () => {
 
   window.stemForgeApp = new StemForgeDawApp();
 
+  // 支援工具列滑鼠滾輪直接橫向平滑滾動
+  const tBar = document.querySelector(".transport-bar");
+  if (tBar) {
+    tBar.addEventListener("wheel", (e) => {
+      if (tBar.scrollWidth > tBar.clientWidth) {
+        if (e.deltaY !== 0) {
+          tBar.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
 
   const autoLoadId = urlParams.get("load");
