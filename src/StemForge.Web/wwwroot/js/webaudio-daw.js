@@ -1692,12 +1692,28 @@ class StemForgeDawApp {
     this.currentJob = jobResult;
 
     // 徹底清除前一專案殘留狀態，防止跨專案污染
-
     this.originalBpm = null;
-
     this.currentBpm = null;
-
+    this.appliedBpm = null;
     this.leadTrimSec = 0;
+
+    // 徹底中斷並釋放舊專案的所有 AudioNode 與 AudioBuffer，防範 Chromium WebAudio 記憶體 OOM
+    if (this.tracks && this.tracks.length > 0) {
+      for (const t of this.tracks) {
+        try { t.gainNode?.disconnect(); } catch {}
+        try { t.panNode?.disconnect(); } catch {}
+        t.audioBuffer = null;
+        t.gainNode = null;
+        t.panNode = null;
+        t.canvas = null;
+        t.rowEl = null;
+      }
+    }
+    this.tracks = [];
+    this.originalMixBuffer = null;
+    if (this.mixerTracksContainer) {
+      this.mixerTracksContainer.innerHTML = '';
+    }
 
 
 
@@ -1896,7 +1912,10 @@ class StemForgeDawApp {
     }
 
     this.currentBpm = targetBpm;
-
+    // 嚴格判定當前音訊實際生效之拍速 (appliedBpm)：若尚未點擊套用新拍速，則音軌真實生效速度一律為原速 originalBpm
+    const isAlreadyShifted = (savedState.tempo?.lastModifiedBpm && Math.abs(savedState.tempo.lastModifiedBpm - bpmVal) > 0.5) ||
+                             (typeof jobResult.currentTempoRatio === 'number' && Math.abs(jobResult.currentTempoRatio - 1.0) > 0.005);
+    this.appliedBpm = isAlreadyShifted ? targetBpm : bpmVal;
     jobResult.targetBpm = targetBpm;
 
 
@@ -2026,7 +2045,7 @@ class StemForgeDawApp {
     const queue = [...jobResult.stems];
     const totalStems = jobResult.stems.length;
     let decodedCount = 0;
-    const concurrency = 2;
+    const concurrency = 1; // 序列單軌解碼，防止 21 條長音軌 (2GB+) 瞬間疊加引起 Chromium OOM 拋出 createBuffer failed
 
     const loadWorker = async () => {
       while (queue.length > 0) {
@@ -4088,20 +4107,16 @@ class StemForgeDawApp {
 
 
 
-  getCurrentBpm() {
-
-    if (this.currentBpm && this.currentBpm > 30) return this.currentBpm;
-
+  // 取得目前音軌音訊「實際生效發聲」的真實拍速 (未點擊套用變速前 100% 等於原速，杜絕預拍/節拍器隨滑桿偷跑)
+  getAppliedAudioBpm() {
+    if (this.appliedBpm && this.appliedBpm > 30) return this.appliedBpm;
     if (this.originalBpm && this.originalBpm > 30) return this.originalBpm;
-
-    if (this.tempoSlider && parseInt(this.tempoSlider.value, 10) > 30) {
-
-      return parseInt(this.tempoSlider.value, 10);
-
-    }
-
+    if (this.currentBpm && this.currentBpm > 30) return this.currentBpm;
     return 120;
+  }
 
+  getCurrentBpm() {
+    return this.getAppliedAudioBpm();
   }
 
 
@@ -5495,13 +5510,20 @@ class StemForgeDawApp {
         });
         clearTimeout(timeoutId);
         if (!r.ok) throw new Error("HTTP " + r.status);
-        const buf = await r.arrayBuffer();
+        let buf = await r.arrayBuffer();
         const decoded = await this.audioCtx.decodeAudioData(buf);
+        buf = null; // 立即脫鉤釋放傳輸 ArrayBuffer
         return decoded;
       } catch (err) {
         if (attempt >= retries) {
           console.error("[AudioLoad] ❌ 音訊載入失敗 (已重試 " + retries + " 次): " + url + ":", err);
-          return null;
+          // 安全降級：建立一個安全最小替代緩衝區，杜絕整個分軌工作站拋出 createBuffer failed 彈窗崩潰
+          try {
+            console.warn("[AudioLoad] 為音軌建立安全降級最小靜音緩衝區:", url);
+            return this.audioCtx.createBuffer(2, 44100, 44100);
+          } catch {
+            return null;
+          }
         }
         await new Promise((res) => setTimeout(res, 300 * (attempt + 1)));
       }
@@ -5895,6 +5917,7 @@ class StemForgeDawApp {
       }
 
       this.currentBpm = targetBpm;
+      this.appliedBpm = isReset ? origBpm : targetBpm;
 
       if (this.targetBpmBadge) {
 
