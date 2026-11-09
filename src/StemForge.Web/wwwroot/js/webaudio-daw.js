@@ -4107,16 +4107,21 @@ class StemForgeDawApp {
 
 
 
-  // 取得目前音軌音訊「實際生效發聲」的真實拍速 (未點擊套用變速前 100% 等於原速，杜絕預拍/節拍器隨滑桿偷跑)
-  getAppliedAudioBpm() {
+  getCurrentBpm() {
+    // 優先讀取滑桿當前拉到的目標 BPM (即拉即生效！即使尚未點擊「⚡ 套用新拍速」，預拍小節與節拍器也 100% 立刻隨滑桿調快/調慢！)
+    if (this.tempoSlider && parseInt(this.tempoSlider.value, 10) > 30) {
+      return parseInt(this.tempoSlider.value, 10);
+    }
+    if (this.currentBpm && this.currentBpm > 30) return this.currentBpm;
     if (this.appliedBpm && this.appliedBpm > 30) return this.appliedBpm;
     if (this.originalBpm && this.originalBpm > 30) return this.originalBpm;
-    if (this.currentBpm && this.currentBpm > 30) return this.currentBpm;
     return 120;
   }
 
-  getCurrentBpm() {
-    return this.getAppliedAudioBpm();
+  getAppliedAudioBpm() {
+    if (this.appliedBpm && this.appliedBpm > 30) return this.appliedBpm;
+    if (this.originalBpm && this.originalBpm > 30) return this.originalBpm;
+    return 120;
   }
 
 
@@ -5419,6 +5424,13 @@ class StemForgeDawApp {
       const pctDelta = Math.round((ratio - 1.0) * 100);
       const signText = pctDelta > 0 ? "+" + pctDelta + "%" : pctDelta + "%";
       this.targetBpmBadge.textContent = isReset ? "目標: 原速" : "目標: " + targetBpm + " BPM (" + signText + ")";
+    }
+
+    // 即拉即生效：若當前播放中且開啟節拍器，立即切換為滑桿新拍速
+    if (this.isPlaying && this.chkMetronome && this.chkMetronome.checked && this.audioCtx) {
+      this.clearMetronome();
+      const beatSec = 60.0 / targetBpm;
+      this.startMetronomeScheduler(this.audioCtx.currentTime + 0.02, this.getCurrentTimeSec(), beatSec);
     }
   }
 
